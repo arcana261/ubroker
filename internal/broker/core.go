@@ -60,11 +60,8 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	}
 	defer c.operating.Done()
 
-	select {
-	case <-ctx.Done():
+	if c.isCanceled(ctx) {
 		return nil, ctx.Err()
-
-	default:
 	}
 
 	return c.delivery, nil
@@ -79,6 +76,10 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	request := acknowledgeRequest{
 		id:     id,
 		result: make(chan error, 1),
+	}
+
+	if c.isCanceled(ctx) {
+		return ctx.Err()
 	}
 
 	select {
@@ -107,6 +108,10 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		result: make(chan error, 1),
 	}
 
+	if c.isCanceled(ctx) {
+		return ctx.Err()
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -127,6 +132,10 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		return ubroker.ErrClosed
 	}
 	defer c.operating.Done()
+
+	if c.isCanceled(ctx) {
+		return ctx.Err()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -274,5 +283,15 @@ func (c *core) beginDelivery(started chan struct{}) {
 				}
 			}(out.ID)
 		}
+	}
+}
+
+func (c *core) isCanceled(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+
+	default:
+		return false
 	}
 }
