@@ -13,6 +13,7 @@ import (
 	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -24,6 +25,81 @@ type CoreBrokerTestSuite struct {
 
 func TestCoreBrokerTestSuite(t *testing.T) {
 	suite.Run(t, new(CoreBrokerTestSuite))
+}
+
+func BenchmarkPublish(b *testing.B) {
+	broker := broker.New(1 * time.Minute)
+	s := assert.New(b)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+	}
+}
+
+func BenchmarkDelivery(b *testing.B) {
+	broker := broker.New(1 * time.Minute)
+	s := assert.New(b)
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+	}
+
+	delivery, err := broker.Delivery(context.Background())
+	s.Nil(err)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		<-delivery
+	}
+}
+
+func BenchmarkAcknowledge(b *testing.B) {
+	broker := broker.New(1 * time.Minute)
+	s := assert.New(b)
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+	}
+
+	delivery, err := broker.Delivery(context.Background())
+	s.Nil(err)
+	deliveries := make([]ubroker.Delivery, 0, b.N)
+
+	for i := 0; i < b.N; i++ {
+		deliveries = append(deliveries, <-delivery)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.Acknowledge(context.Background(), deliveries[i].ID))
+	}
+}
+
+func BenchmarkReQueue(b *testing.B) {
+	broker := broker.New(1 * time.Minute)
+	s := assert.New(b)
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+	}
+
+	delivery, err := broker.Delivery(context.Background())
+	s.Nil(err)
+	deliveries := make([]ubroker.Delivery, 0, b.N)
+
+	for i := 0; i < b.N; i++ {
+		deliveries = append(deliveries, <-delivery)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		s.Nil(broker.ReQueue(context.Background(), deliveries[i].ID))
+	}
 }
 
 func (s *CoreBrokerTestSuite) TestInitialDeliveryShouldBeEmpty() {
@@ -126,7 +202,7 @@ func (s *CoreBrokerTestSuite) TestAcknowledgedMessageShouldNotAppearInDelivery()
 }
 
 func (s *CoreBrokerTestSuite) TestDeliveryShouldBeReQueueable() {
-	s.prepareTest(1 * time.Second)
+	s.prepareTest(1 * time.Hour)
 	s.publish("hello")
 	delivery := s.getDelivery(context.Background())
 	msg1 := <-delivery
