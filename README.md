@@ -46,4 +46,6 @@ make dependencies
 
 6. Submit a `Pull Request` in github. We evaluate submissions that pass the tests **ONLY**.
 
-Please feel free to ask questions in quera or email me, info _!at%% ucoder.ir. 
+## Questions?
+
+Feel free to open an issue or chat on gitter as provided by gitter badge above!
