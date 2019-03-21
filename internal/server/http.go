@@ -169,6 +169,7 @@ func (s *httpServer) handleAcknowledge(writer http.ResponseWriter, request *http
 	err = s.broker.Acknowledge(ctx, id)
 	if err != nil {
 		s.handleError(writer, request, err)
+		return
 	}
 
 	s.handleOK(writer, request)
@@ -191,9 +192,10 @@ func (s *httpServer) handleReQueue(writer http.ResponseWriter, request *http.Req
 	ctx, cancel := s.makeContext(request)
 	defer cancel()
 
-	err = s.broker.Acknowledge(ctx, id)
+	err = s.broker.ReQueue(ctx, id)
 	if err != nil {
 		s.handleError(writer, request, err)
+		return
 	}
 
 	s.handleOK(writer, request)
