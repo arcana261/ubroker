@@ -15,7 +15,7 @@ import (
 func New(ttl time.Duration) ubroker.Broker {
 	result := &core{
 		delivery:        make(chan ubroker.Delivery),
-		messageDelivery: make(chan ubroker.Message, 1000),
+		messageDelivery: make(chan ubroker.Message),
 		closed:          make(chan struct{}),
 		drain:           make(chan struct{}),
 		acknowledge:     make(chan acknowledgeRequest),
@@ -197,13 +197,23 @@ func (c *core) beginDelivery(started chan struct{}) {
 	nextID := 0
 	pending := make(map[int]ubroker.Message)
 
-	var requeueChannel chan ubroker.Message
-	requeueSlice := []ubroker.Message{ubroker.Message{}}
-
 	var outChannel chan ubroker.Delivery
-	var out ubroker.Delivery
+	outSlice := []ubroker.Delivery{ubroker.Delivery{}}
 
-	input := c.messageDelivery
+	messageHandler := func(msg ubroker.Message) {
+		id := nextID
+		nextID++
+		newDelivery := ubroker.Delivery{
+			ID:      id,
+			Message: msg,
+		}
+		if outChannel == nil {
+			outChannel = c.delivery
+			outSlice = []ubroker.Delivery{newDelivery}
+		} else {
+			outSlice = append(outSlice, newDelivery)
+		}
+	}
 
 	close(started)
 
@@ -227,36 +237,15 @@ func (c *core) beginDelivery(started chan struct{}) {
 				request.result <- ubroker.ErrInvalidID
 			} else {
 				delete(pending, request.id)
-				if requeueChannel == nil {
-					requeueChannel = c.messageDelivery
-					requeueSlice = []ubroker.Message{msg}
-				} else {
-					requeueSlice = append(requeueSlice, msg)
-				}
+				messageHandler(msg)
 				request.result <- nil
 			}
 
-		case requeueChannel <- requeueSlice[0]:
-			requeueSlice = requeueSlice[1:]
-			if len(requeueSlice) == 0 {
-				requeueChannel = nil
-				requeueSlice = []ubroker.Message{ubroker.Message{}}
-			}
+		case msg := <-c.messageDelivery:
+			messageHandler(msg)
 
-		case msg := <-input:
-			id := nextID
-			nextID++
-			out = ubroker.Delivery{
-				ID:      id,
-				Message: msg,
-			}
-			outChannel = c.delivery
-			input = nil
-
-		case outChannel <- out:
-			outChannel = nil
-			input = c.messageDelivery
-			pending[out.ID] = out.Message
+		case outChannel <- outSlice[0]:
+			pending[outSlice[0].ID] = outSlice[0].Message
 			c.wg.Add(1)
 			go func(id int) {
 				defer c.wg.Done()
@@ -281,7 +270,13 @@ func (c *core) beginDelivery(started chan struct{}) {
 					case c.requeue <- request:
 					}
 				}
-			}(out.ID)
+			}(outSlice[0].ID)
+
+			outSlice = outSlice[1:]
+			if len(outSlice) == 0 {
+				outChannel = nil
+				outSlice = []ubroker.Delivery{ubroker.Delivery{}}
+			}
 		}
 	}
 }
