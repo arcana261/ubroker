@@ -35,7 +35,7 @@ cd $GOPATH/github.com/<your username>
 git clone <clone URL>
 cd ubroker
 
-make dependencies
+make dev-dependencies
 ```
 
 3. Open `internal/broker/core.go` file. This file lays out an implementation of  `pkg.ubroker.Broker` interface located in `pkg/ubroker/ubroker.go` file. You should read the GoDoc for the interface. We have accompanies the code with tests that let's you on a TDD‌(Test Driven Development) approach of implementing this interface. You can read tests in `internal/broker/core_test.go` file to know what is missing and what needs to be implemented.
