@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
+	"github.com/sneyes/ubroker/pkg/ubroker"
 )
 
 // New creates a new instance of ubroker.Broker
