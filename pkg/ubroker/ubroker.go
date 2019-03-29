@@ -9,7 +9,7 @@ import (
 // Broker interface defines functionalities of a
 // message broker system.
 //
-// we require our message broker to timeout and requeue
+// We require our message broker to timeout and requeue
 // unacknowledged messages automatically. We also require
 // that implementations should be thread-safe.
 type Broker interface {
@@ -27,7 +27,7 @@ type Broker interface {
 	// messages to consumers.
 	// We require following:
 	//
-	// 1. Resulting read-only channel is unique (it doesn
+	// 1. Resulting read-only channel is unique (it does
 	//    not change each time you call it)
 	// 2. If `ctx` is canceled or timed out, `ctx.Err()` is
 	//    returned
