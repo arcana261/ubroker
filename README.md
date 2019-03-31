@@ -4,7 +4,7 @@
 
 Happy new year to you, students!
 
-We wanted to set the stage for continuous series of excersices to develop
+We wanted to set the stage for continuous series of exercises to develop
 a message broker.
 
 A message broker is a system that acts as a hub to distribute messages in a
@@ -18,12 +18,12 @@ various benefits of using messaging systems, which the most important are:
 And much more! I highly encourage you two watch [this](https://www.youtube.com/watch?v=rXi5CLjIQ9k)
 awesome video! I also encourage you to look at RabbitMQ design.
 
-So, the messaging system is expected to do following opration:
+So, the messaging system is expected to do following operation:
 
 1. Provide a `/publish` HTTP API that let's clients publish messages to a queue. Or to say enqueue messages in our queue.
 2. Provide a `/fetch` HTTP‌ API that let's clients fetch messages from queue.
-3. Provide a `/acknowledge/{id}` HTTP‌‌ API that clients call after their processing is finished so that we can remove item from queue. This is important because we can have a `at least once` gurantee on our queue: If a client crashes after receiving a message from queue, we can return them automatically to queue after a timeout. This way we can ensure no message is removed from queue without clients acknowledging they have successfuly and gracefully processed them. This is why this system is called to have a `at least once` gurantee because clients might see messages **at least once**. By stating that our gurantee is at-least once, we are not referring to a randomized behaviour that we might re-send a message to clients, but rather clients might see messages more than once becuase of failures or errors in their systems (like database transaction failure, etc.) And we will ensure that we keep supplying enqueued message until clients confirm that they have successfuly processed fetched message.
-4. Provde a `/requeue/{id}` HTTP‌ API that let's clients to requeue a message. This is useful when clients run into error in their system and want to retry a message or let some other worker handle them.
+3. Provide a `/acknowledge/{id}` HTTP‌‌ API that clients call after their processing is finished so that we can remove item from queue. This is important because we can have a `at least once` guarantee on our queue: If a client crashes after receiving a message from queue, we can return them automatically to queue after a timeout. This way we can ensure no message is removed from queue without clients acknowledging they have successfully and gracefully processed them. This is why this system is called to have an `at least once` guarantee because clients might see messages **at least once**. By stating that our gaurantee is at-least once, we are not referring to a randomized behavior that we might re-send a message to clients, but rather clients might see messages more than once because of failures or errors in their systems (like database transaction failure, etc.) And we will ensure that we keep supplying enqueued message until clients confirm that they have successfully processed fetched message.
+4. Provide a `/requeue/{id}` HTTP‌ API that let's clients to requeue a message. This is useful when clients run into error in their system and want to retry a message or let some other worker handle them.
 
 Now... Don't you guys worry! We have already laid out a boilerplate code beautifully so that you can learn how to code in GO and also validate your results! The steps are as follows:
 
