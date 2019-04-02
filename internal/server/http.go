@@ -17,7 +17,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/miladosos/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 )
 
