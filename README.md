@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/miladosos/ubroker.svg?branch=master)](https://travis-ci.org/arcana261/ubroker) [![Join the chat at https://gitter.im/arcana261-ubroker/community](https://badges.gitter.im/arcana261-ubroker/community.svg)](https://gitter.im/arcana261-ubroker/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build Status](https://travis-ci.org/miladosos/ubroker.svg?branch=master)](https://travis-ci.org/miladosos/ubroker) [![Join the chat at https://gitter.im/arcana261-ubroker/community](https://badges.gitter.im/arcana261-ubroker/community.svg)](https://gitter.im/arcana261-ubroker/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 # ubroker
 
