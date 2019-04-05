@@ -3,6 +3,8 @@ package broker
 import (
 	"container/list"
 	"context"
+	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -18,9 +20,8 @@ func New(ttl time.Duration) ubroker.Broker {
 		ttl: ttl,
 	}
 	result.messageList = *list.New()
-	a := &coreMsg{}
-	result.messageList.PushFront(a)
 	result.deliveryChan = make(chan ubroker.Delivery)
+	result.idSet = make(map[int]bool)
 
 	return result
 }
@@ -35,6 +36,8 @@ type core struct {
 	ttl          time.Duration
 	deliveryChan <-chan ubroker.Delivery
 	isClosed     bool
+	idSet        map[int]bool
+	mutex        sync.Mutex
 	// TODO: add required fields
 	// 1- A message id generation routine
 	// 2- A dictionary of message values and id keys
@@ -88,20 +91,24 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	// Publish is used to enqueue a new message to broker
-	// We demand following:
-	//
-	// 1. If `ctx` is canceled or timed out, `ctx.Err()` is
-	//    returned
-	// 2. If broker is closed, `ErrClosed` is returned
-	// 3. should be thread-safe
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	msg := new(coreMsg)
+	msg.msgD.Message = message
+	msg.timeInQueue = time.Now()
+	msg.msgD.ID = rand.Int()
+	for c.idSet[msg.msgD.ID] {
+		msg.msgD.ID = rand.Int()
+	}
+	c.idSet[msg.msgD.ID] = true
+
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if c.isClosed {
 		return errors.Wrap(ubroker.ErrClosed, "delivery error, Broker is closed")
 	}
-	return errors.Wrap(ubroker.ErrUnimplemented, "method Publish is not implemented")
+	return nil
 }
 
 func (c *core) Close() error {
