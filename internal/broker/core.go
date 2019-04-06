@@ -60,12 +60,6 @@ func removeMessage(slice []coreMsg, s int) []coreMsg {
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	// Acknowledge is called by clients to declare that specified message id has been successfuly processed and should not be requeued to queue and we have to remove it.
-	// We demand following:
-	//
-	// 1. Non-existing ids should cause ErrInvalidID
-	// 2. Re-acknowledgement and Requeue of id should cause ErrInvalidID
-	// 3. Should prevent requeue due to TTL
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if ctx.Err() != nil {
@@ -134,5 +128,6 @@ func (c *core) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.isClosed = true
+	close(c.deliveryChan)
 	return nil
 }
