@@ -55,6 +55,10 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	return c.deliveryChan, nil
 }
 
+func removeMessage(slice []coreMsg, s int) []coreMsg {
+	return append(slice[:s], slice[s+1:]...)
+}
+
 func (c *core) Acknowledge(ctx context.Context, id int) error {
 	// Acknowledge is called by clients to declare that specified message id has been successfuly processed and should not be requeued to queue and we have to remove it.
 	// We demand following:
@@ -62,11 +66,25 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	// 1. Non-existing ids should cause ErrInvalidID
 	// 2. Re-acknowledgement and Requeue of id should cause ErrInvalidID
 	// 3. Should prevent requeue due to TTL
-	// 4. If `ctx` is canceled or timed out, `ctx.Err()` is
-	//    returned
-	// 5. If broker is closed, `ErrClosed` is returned
-	// 6. should be thread-safe
-	return errors.Wrap(ubroker.ErrUnimplemented, "method Acknowledge is not implemented")
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if c.isClosed {
+		return errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
+	}
+	ackMessageIndex := -1
+	for index, value := range c.messageList {
+		if value.msgD.ID == id {
+			ackMessageIndex = index
+		}
+	}
+	if ackMessageIndex == -1 {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+	}
+	c.messageList = removeMessage(c.messageList, ackMessageIndex)
+	return nil
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
