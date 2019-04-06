@@ -66,31 +66,39 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 		return ctx.Err()
 	}
 	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
+		return errors.Wrap(ubroker.ErrClosed, "Acknowledge error, Broker is closed")
 	}
 	ackMessageIndex := -1
 	for index, value := range c.messageList {
 		if value.msgD.ID == id {
 			ackMessageIndex = index
+			break
 		}
 	}
 	if ackMessageIndex == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
 	}
+
+	if time.Now().Sub(c.messageList[ackMessageIndex].timeInQueue) > c.ttl {
+		go c.ReQueue(ctx, id)
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+	}
 	c.messageList = removeMessage(c.messageList, ackMessageIndex)
+	for len(c.deliveryChan) > 0 {
+		<-c.deliveryChan
+	}
+	for index, value := range c.messageList {
+		_ = index
+		c.deliveryChan <- value.msgD
+	}
 	return nil
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
 	// ReQueue is called by clients to declare that specified message id should be put back in front of the queue. We demand following:
 	//
-	// 1. Non-existing ids should cause ErrInvalidID
 	// 2. Re-acknowledgement and Requeue of id should cause ErrInvalidID
 	// 3. Should prevent requeue due to TTL
-	// 4. If `ctx` is canceled or timed out, `ctx.Err()` is
-	//    returned
-	// 5. If broker is closed, `ErrClosed` is returned
-	// 6. should be thread-safe
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if ctx.Err() != nil {
@@ -99,7 +107,35 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if c.isClosed {
 		return errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
 	}
-	return errors.Wrap(ubroker.ErrUnimplemented, "method ReQueue is not implemented")
+	requeueMessageIndex := -1
+	requeueMessageValue := &coreMsg{}
+	for index, value := range c.messageList {
+		if value.msgD.ID == id {
+			requeueMessageIndex = index
+			requeueMessageValue = &value
+			break
+		}
+	}
+	if requeueMessageIndex == -1 {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+	}
+	requeueMessageValue.timeInQueue = time.Now()
+	requeueMessageValue.msgD.ID = rand.Int()
+	for c.idSet[requeueMessageValue.msgD.ID] {
+		requeueMessageValue.msgD.ID = rand.Int()
+	}
+	c.idSet[requeueMessageValue.msgD.ID] = true
+	c.messageList = removeMessage(c.messageList, requeueMessageIndex)
+	c.messageList = append(c.messageList, *requeueMessageValue)
+
+	for len(c.deliveryChan) > 0 {
+		<-c.deliveryChan
+	}
+	for index, value := range c.messageList {
+		_ = index
+		c.deliveryChan <- value.msgD
+	}
+	return nil
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
@@ -121,6 +157,7 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	}
 	c.idSet[msg.msgD.ID] = true
 	c.messageList = append(c.messageList, *msg)
+	c.deliveryChan <- msg.msgD
 	return nil
 }
 
