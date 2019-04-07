@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/internal/server"
+	"github.com/erfan-mehraban/ubroker/internal/broker"
+	"github.com/erfan-mehraban/ubroker/internal/server"
 )
 
 func main() {
