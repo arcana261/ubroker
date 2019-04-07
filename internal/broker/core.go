@@ -275,7 +275,14 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 
 	select {
 	case c.publishChannel <- pr:
-		return <-pr.resultErr
+		select {
+		case <-pr.resultErr:
+			return nil
+		case <-c.closed:
+			return ubroker.ErrClosed
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	case <-c.closed:
 		return ubroker.ErrClosed
 	case <-ctx.Done():
