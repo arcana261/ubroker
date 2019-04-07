@@ -6,8 +6,8 @@ help: ## Display this help screen
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 check: dev-dependencies ## Run unit tests
-	go test ./...
-	go test -race ./...
+	go test ./... -count=1
+	go test -race ./... -count=1
 
 benchmark: dev-dependencies ## Run benchmarks
 	go test -bench . ./...
