@@ -107,8 +107,7 @@ func (c *core) startQueueManager() {
 					deliveryChannel = c.deliveryChannel
 				}
 				queue = append(queue, deliveryMessage)
-				//publishMassage.resultErr <- nil
-				close(publishMassage.resultErr)
+				publishMassage.resultErr <- nil
 
 			case deliveryChannel <- first(queue): // front of queue delivered
 				// create goroutine to wait for ack and add to pending map
