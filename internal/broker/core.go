@@ -5,21 +5,14 @@ import (
 	"time"
 
 	"github.com/maedeazad/ubroker/pkg/ubroker"
-	// "github.com/pkg/errors"
 
-	// "container/list"
 	"sync"
-
 	"log"
 )
 
 func print(s ...interface{}){
 	log.Println(s...)
 
-	// br := bufio.NewWriter(os.Stdout)
-  // logger := log.New(br, "", log.Ldate)
-  // logger.Printf("%s\n", s)
-  // br.Flush()
 }
 
 // New creates a new instance of ubroker.Broker
@@ -27,8 +20,6 @@ func print(s ...interface{}){
 // we requeue an unacknowledged/unrequeued message
 // automatically.
 func New(ttl time.Duration) ubroker.Broker {
-	///print("New")
-	// TODO timer for ttl
 	return &core{
 		maxId: 0,
 		ttl: ttl,
@@ -53,9 +44,7 @@ func (e *QueueElement) activateTimer(expTimer *time.Timer)  {
 		select {
     case <-expTimer.C:
 			e.core.reQueue(e.id)
-			///print("timer requeue", e.id, err)
 		case <-e.timerCanceledChan:
-			///print("timer aborted", e.id)
     }
 	}()
 }
@@ -84,7 +73,6 @@ type core struct {
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
-	///print("Delivery")
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -100,7 +88,6 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	///print("Acknowledge", id)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -117,11 +104,9 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 			val.stopTimer()
 			delete(c.msgs, id)
 	}else{
-		// ///print("Acknowledge-not-exists")
 		return ubroker.ErrInvalidID
 	}
 
-	// ///print("Acknowledge-ok")
 	return nil
 }
 
@@ -148,7 +133,6 @@ func (c *core) reQueue(id int) error {
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	///print("ReQueue", id)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -171,7 +155,6 @@ func (c *core) addNewMessage(message ubroker.Message){
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	///print("Publish")
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -186,7 +169,6 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
-	///print("Close")
 	c.Lock()
 	defer c.Unlock()
 	if c.closed {
