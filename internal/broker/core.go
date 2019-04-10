@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 func New(ttl time.Duration) ubroker.Broker {
 	temp := &core{
 		closed:          false,
-		brokerChan:      make(chan ubroker.Delivery, 4000),
+		brokerChan:      make(chan ubroker.Delivery, 5000),
 		publishedQueue:  []item{},
 		receivedId:      []int{},
 		deliveredId:     []int{},
@@ -121,7 +120,7 @@ func (c *core) DoingReQueue(ctx context.Context, id int) {
 			c.receivedId = append(c.receivedId, c.lastIdValue)
 			v := ubroker.Delivery{Message: element.Message, ID: c.lastIdValue}
 			v2 := item{Message: element.Message, ID: c.lastIdValue, Time: time.Now(), receivedAckChannel: make(chan int)}
-			fmt.Println(len(c.publishedQueue), id, i)
+			//fmt.Println(len(c.publishedQueue), id, i)
 			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
 			c.publishedQueue = append(c.publishedQueue, v2)
 			c.brokerChan <- v
