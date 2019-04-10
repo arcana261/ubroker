@@ -17,7 +17,7 @@ import (
 func New(ttl time.Duration) ubroker.Broker {
 	temp := &core{
 		closed:          false,
-		brokerChan:      make(chan ubroker.Delivery, 2000),
+		brokerChan:      make(chan ubroker.Delivery, 4000),
 		publishedQueue:  []item{},
 		receivedId:      []int{},
 		deliveredId:     []int{},
