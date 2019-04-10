@@ -19,7 +19,6 @@ func New(ttl time.Duration) ubroker.Broker {
 		brokerChan:      make(chan ubroker.Delivery, 5000),
 		publishedQueue:  []item{},
 		receivedId:      []int{},
-		deliveredId:     []int{},
 		receivedAck:     []int{},
 		receivedRequeue: []int{},
 		lastIdValue:     -1,
@@ -34,7 +33,6 @@ func New(ttl time.Duration) ubroker.Broker {
 type item struct {
 	Message            ubroker.Message
 	ID                 int
-	Time               time.Time
 	receivedAckChannel chan int
 }
 type core struct {
@@ -42,7 +40,6 @@ type core struct {
 	brokerChan      chan ubroker.Delivery
 	publishedQueue  []item
 	receivedId      []int
-	deliveredId     []int
 	lastIdValue     int
 	receivedAck     []int
 	receivedRequeue []int
@@ -76,6 +73,7 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
+
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "closed")
 	}
@@ -103,6 +101,7 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 		if element.ID == id {
 			c.publishedQueue[i].receivedAckChannel <- id
 			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
+			break
 		}
 	}
 	c.mut.Unlock()
@@ -119,7 +118,7 @@ func (c *core) DoingReQueue(ctx context.Context, id int) {
 			c.lastIdValue += 1
 			c.receivedId = append(c.receivedId, c.lastIdValue)
 			v := ubroker.Delivery{Message: element.Message, ID: c.lastIdValue}
-			v2 := item{Message: element.Message, ID: c.lastIdValue, Time: time.Now(), receivedAckChannel: make(chan int)}
+			v2 := item{Message: element.Message, ID: c.lastIdValue, receivedAckChannel: make(chan int)}
 			//fmt.Println(len(c.publishedQueue), id, i)
 			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
 			c.publishedQueue = append(c.publishedQueue, v2)
@@ -179,7 +178,7 @@ func (c *core) DoingPublish(ctx context.Context, message ubroker.Message) {
 	c.lastIdValue += 1
 	c.receivedId = append(c.receivedId, c.lastIdValue)
 	v := ubroker.Delivery{Message: message, ID: c.lastIdValue}
-	v2 := item{Message: message, ID: c.lastIdValue, Time: time.Now(), receivedAckChannel: make(chan int)}
+	v2 := item{Message: message, ID: c.lastIdValue, receivedAckChannel: make(chan int)}
 	c.publishedQueue = append(c.publishedQueue, v2)
 	c.brokerChan <- v
 	go c.HandelingTTL(ctx, v2)
