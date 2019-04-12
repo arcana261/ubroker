@@ -153,6 +153,7 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 func (c *core) Close() error {
 	// TODO:‌ implement me
 	c.closed = true
+	close(c.mainChannel)
 
 	return nil
 }
