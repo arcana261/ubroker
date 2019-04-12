@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/amirmh/ubroker/internal/broker"
+	"github.com/amirmh/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"
@@ -375,12 +375,14 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 				return
 
 			case msg := <-delivery:
+
 				err = s.broker.Acknowledge(context.Background(), msg.ID)
 				if err == ubroker.ErrClosed {
 					return
 				}
 				s.Nil(err)
 				if err != nil {
+					fmt.Println(err)
 					return
 				}
 			}
@@ -400,19 +402,25 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 		for {
 			select {
 			case <-ticker.C:
+
 				return
 
 			case msg := <-delivery:
+
 				err = s.broker.ReQueue(context.Background(), msg.ID)
 				if err == ubroker.ErrClosed {
+
 					return
 				}
 				s.Nil(err)
 				if err != nil {
+					fmt.Println(err)
+
 					return
 				}
 			}
 		}
+
 	}()
 
 	wg.Add(1)
