@@ -3,8 +3,6 @@ package broker_test
 import (
 	"context"
 	"fmt"
-	"github.com/msafari18/ubroker/pkg/ubroker"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -12,9 +10,10 @@ import (
 	"time"
 
 	"github.com/arcana261/ubroker/internal/broker"
-
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
