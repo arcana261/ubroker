@@ -19,7 +19,7 @@ func New(ttl time.Duration) ubroker.Broker {
 		mainChannel:    make(chan ubroker.Delivery, 100),
 		ackMap:         make(map[int]chan bool),
 		pendingMap:     make(map[int]ubroker.Message),
-
+		requeueMap:		make(map[int]bool),
 		ttl:    ttl,
 		closed: false,
 	}
@@ -31,9 +31,10 @@ type core struct {
 	mainChannel     chan ubroker.Delivery
 	ackMap          map[int]chan bool
 	pendingMap      map[int]ubroker.Message
+	requeueMap      map[int]bool
 	ttl             time.Duration
 	sequenceMutex   sync.Mutex
-	pendingMutex	sync.Mutex
+	pendingMutex    sync.Mutex
 	closed          bool
 	deliveryStarted bool
 }
@@ -116,6 +117,9 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	//if _, ok := c.pendingMap[id]; ok {
 	//		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
 	//}
+	if _, ok := c.requeueMap[id]; ok {
+		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
+	}
 
 	// everything is "probably" Ok, so we're going to put the message in queue
 	tMessage := c.pendingMap[id]
@@ -126,13 +130,18 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		ID:      c.sequenceNumber,
 	}
 	// setting the acknowledge channel
-	c.ackMap[c.sequenceNumber] = make(chan bool, 1)
+	c.ackMap[tDelivery.ID] = make(chan bool, 1)
+	c.pendingMap[tDelivery.ID] = tDelivery.Message
 
 	go c.ttlHandler(ctx, tDelivery)
-	// pushing the message into the main channel
-	c.mainChannel <- tDelivery
 	// invalidate the previous id
 	c.ackMap[id] <- false
+	// removing the message id from maps
+	delete(c.ackMap, id)
+	delete(c.pendingMap, id)
+	c.requeueMap[id] = true
+	// pushing the message into the main channel
+	c.mainChannel <- tDelivery
 
 	return nil
 }
@@ -156,6 +165,8 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		Message: message,
 	}
 	c.ackMap[delivery.ID] = make(chan bool, 1)
+	c.pendingMap[delivery.ID] = delivery.Message
+
 	go c.ttlHandler(ctx, delivery)
 	// push the message to channel
 	c.mainChannel <- delivery
@@ -182,9 +193,6 @@ func filterContextError(ctx context.Context) error {
 
 // Sets a timeout for TTL and re-queue the message after that time
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
-	//c.pendingMutex.Lock()
-	c.pendingMap[delivery.ID] = delivery.Message
-	//c.pendingMutex.Unlock()
 	c.sequenceMutex.Lock()
 	ch := c.ackMap[delivery.ID]
 	c.sequenceMutex.Unlock()
