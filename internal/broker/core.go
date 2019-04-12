@@ -93,35 +93,30 @@ func (core *Core) Acknowledge(ctx context.Context, id int) error {
 	if ctx.Err() == context.DeadlineExceeded {
 		return ctx.Err()
 	}
+	if err := core.startRequestHandling(); err != nil {
+		return err
+	}
+	defer core.requestGroup.Done()
+	r := acknowledge{
+		id:    id,
+		error: make(chan error, 1),
+	}
+	select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case core.acknowledgeEntry <- r:
+			select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case err := <-r.error:
+					return err
+			}
+	}
 	core.Lock()
 	defer core.Unlock()
-	if core.isClosed == true {
-		return ubroker.ErrClosed
-	}
-	if core.delivered == false {
-		return errors.Wrap(ubroker.ErrInvalidID, "Error")
-	}
-	var indexID = -1
-	for index, message := range core.publishEntry {
-		if message.msg.ID == id {
-			indexID = index
-			break
-		}
-	}
-	var ackIndex = -1
-	for index, ids := range core.acknowledgeEntry {
-		if ids == id {
-			ackIndex = index
-			break
-		}
-	}
-	if indexID == -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "Error")
-	}
+	
+	
 	if ackIndex != -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "Error")
-	}
-	if time.Now().Sub(core.publishEntry[indexID].ttlTime) > core.ttl {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	} else {
 		core.acknowledgeEntry = append(core.acknowledgeEntry, id)
@@ -145,13 +140,7 @@ func (core *Core) ReQueue(ctx context.Context, id int) error {
 	if core.delivered == false {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	var indexID = -1
-	for index, message := range core.publishEntry {
-		if message.msg.ID == id {
-			indexID = index
-			break
-		}
-	}
+	
 	if indexID == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
