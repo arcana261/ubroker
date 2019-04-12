@@ -141,16 +141,16 @@ func (core *Core) ReQueue(ctx context.Context, id int) error {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
 	
-	if indexID == -1 {
+	if index == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	if time.Now().Sub(core.publishEntry[indexID].ttlTime) > core.ttl {
-		_ = core.reRequest(core.publishEntry[indexID])
-		core.publishEntry = append(core.publishEntry[:indexID], core.publishEntry[indexID+1:]...)
+	if time.Now().Sub(core.publishEntry[index].ttlTime) > core.ttl {
+		_ = core.reRequest(core.publishEntry[index])
+		core.publishEntry = append(core.publishEntry[:index], core.publishEntry[index+1:]...)
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	} else {
-		_ = core.reRequest(core.publishEntry[indexID])
-		core.publishEntry = append(core.publishEntry[:indexID], core.publishEntry[indexID+1:]...)
+		_ = core.reRequest(core.publishEntry[index])
+		core.publishEntry = append(core.publishEntry[:index], core.publishEntry[index+1:]...)
 		return nil
 
 	}
