@@ -17,8 +17,10 @@ func New(ttl time.Duration) ubroker.Broker {
 		sequenceNumber: -1,
 		mainChannel:    make(chan ubroker.Delivery),
 		ackMap:         make(map[int]chan bool),
-		ttl:            ttl,
-		closed:         false,
+		pendingMap:		make(map[int]ubroker.Delivery),
+
+		ttl:    ttl,
+		closed: false,
 	}
 }
 
@@ -27,6 +29,7 @@ type core struct {
 	sequenceNumber int
 	mainChannel    chan ubroker.Delivery
 	ackMap         map[int]chan bool
+	pendingMap     map[int]ubroker.Delivery
 
 	ttl time.Duration
 
@@ -55,14 +58,14 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
 	}
-	// check if the id is not existed
+	// check if the id is not exists
 	// TODO: Handle race condition
 	if id > c.sequenceNumber {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+" is not committed yet.")
 	}
 	// check if it's going to re-acknowledgment
 	if _, ok := c.ackMap[id]; !ok {
-		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: This id has been ACKed before.")
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+"has been ACKed before.")
 	}
 	// everything is "probably" Ok, so we're going to mark the ACK
 	c.ackMap[id] <- true
@@ -71,8 +74,31 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	// TODO:‌ implement me
-	return errors.Wrap(ubroker.ErrUnimplemented, "method ReQueue is not implemented")
+	// check if context has error
+	if err := filterContextError(ctx); err != nil {
+		return err
+	}
+	// checking the broker
+	if c.closed {
+		return errors.Wrap(ubroker.ErrClosed, "ReQueue:: The broker is closed.")
+	}
+	// check if the id is not exists
+	// TODO: Handle race condition
+	if id > c.sequenceNumber {
+		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
+	}
+	// check if it's going to re-queue the message
+	if _, ok := c.ackMap[id]; ok {
+		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
+	}
+	// everything is "probably" Ok, so we're going to put the message in queue
+	c.ackMap[id] = make(chan bool, 1)
+	tDelivery := c.pendingMap[id]
+	go c.ttlHandler(ctx, tDelivery)
+	// pushing the message into the main channel
+	c.mainChannel <- tDelivery
+
+	return nil
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
@@ -117,12 +143,15 @@ func filterContextError(ctx context.Context) error {
 
 // Sets a timeout for TTL and re-queue the message after that time
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
+	// persisting the un-acknowledged message
+	c.pendingMap[delivery.ID] = delivery
 	// TODO: Handle race condition
 	select {
 	case <-time.After(c.ttl):
-		// TODO: re-queue
+		_ = c.ReQueue(ctx, delivery.ID)
 	case <-c.ackMap[delivery.ID]:
 		delete(c.ackMap, delivery.ID)
+		delete(c.pendingMap, delivery.ID)
 		return
 	}
 }
