@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/MohammadHossein/ubroker/internal/broker"
+	"github.com/MohammadHossein/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"
@@ -208,7 +208,7 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldBeReQueueable() {
 	msg1 := <-delivery
 	s.Nil(s.broker.ReQueue(context.Background(), msg1.ID))
 	msg2 := <-delivery
-	s.NotEqual(msg1.ID, msg2.ID)
+		s.NotEqual(msg1.ID, msg2.ID)
 	s.Equal(msg1.Message.Body, msg2.Message.Body)
 }
 
@@ -260,6 +260,8 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldReQueueUponHalfSecondTTL() {
 	s.publish("hello2")
 	msg2 := <-delivery
 	time.Sleep(750 * time.Millisecond)
+	fmt.Println(msg1)
+	fmt.Println(msg2)
 	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg2.ID))
 	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg2.ID))
 	msg3 := <-delivery
