@@ -103,6 +103,7 @@ func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
 	case <- time.After(c.ttl):
 		// TODO: re-queue
 	case <- c.ackMap[delivery.ID]:
+		delete(c.ackMap, delivery.ID)
 		return
 	}
 }
