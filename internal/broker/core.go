@@ -15,7 +15,7 @@ import (
 func New(ttl time.Duration) ubroker.Broker {
 	return &core{
 		sequenceNumber: -1,
-		mainChannel:    make(chan ubroker.Delivery),
+		mainChannel:    make(chan ubroker.Delivery, 100),
 		ackMap:         make(map[int]chan bool),
 		pendingMap:		make(map[int]ubroker.Delivery),
 
@@ -60,7 +60,7 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 	// check if the id is not exists
 	// TODO: Handle race condition
-	if id > c.sequenceNumber {
+	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+" is not committed yet.")
 	}
 	// check if it's going to re-acknowledgment
@@ -84,7 +84,7 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	}
 	// check if the id is not exists
 	// TODO: Handle race condition
-	if id > c.sequenceNumber {
+	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
 	}
 	// check if it's going to re-queue the message
