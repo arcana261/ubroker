@@ -3,6 +3,8 @@ package broker_test
 import (
 	"context"
 	"fmt"
+	"github.com/msafari18/ubroker/pkg/ubroker"
+	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -10,10 +12,9 @@ import (
 	"time"
 
 	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/pkg/ubroker"
+
 	"github.com/pkg/errors"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -333,21 +334,29 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 	defer ticker.Stop()
 
 	s.prepareTest(1 * time.Second)
-
+	var i int
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
 		for {
+			//fmt.Print("---------->")
 			select {
 			case <-ticker.C:
+				//fmt.Print("---------->")
 				return
 
 			default:
+				i = i + 1
+				//fmt.Print("---------->")
 				err := s.broker.Publish(context.Background(), ubroker.Message{
 					Body: fmt.Sprint(rand.Intn(1000)),
 				})
+				//fmt.Print(i)
+				//fmt.Print("\n")
+
 				if err == ubroker.ErrClosed {
+					//fmt.Print("------------------")
 					return
 				}
 				s.Nil(err)
@@ -362,7 +371,7 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
+		//fmt.Print("-------------->")
 		delivery, err := s.broker.Delivery(context.Background())
 		s.Nil(err)
 		if err != nil {

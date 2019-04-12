@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arcana261/testify/mock"
+	"github.com/arcana261/testify/suite"
 	"github.com/arcana261/ubroker/internal/server"
 	"github.com/arcana261/ubroker/pkg/ubroker"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/suite"
 )
 
 type mockBroker struct {
