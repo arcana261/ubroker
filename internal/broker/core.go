@@ -18,7 +18,7 @@ func New(ttl time.Duration) ubroker.Broker {
 		sequenceNumber: -1,
 		mainChannel:    make(chan ubroker.Delivery, 100),
 		ackMap:         make(map[int]chan bool),
-		pendingMap:		make(map[int]ubroker.Delivery),
+		pendingMap:     make(map[int]ubroker.Message),
 
 		ttl:    ttl,
 		closed: false,
@@ -30,11 +30,11 @@ type core struct {
 	sequenceNumber int
 	mainChannel    chan ubroker.Delivery
 	ackMap         map[int]chan bool
-	pendingMap     map[int]ubroker.Delivery
+	pendingMap     map[int]ubroker.Message
 
-	ttl time.Duration
+	ttl           time.Duration
 	sequenceMutex sync.Mutex
-	closed bool
+	closed        bool
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
@@ -93,12 +93,20 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
 	}
 	// check if it's going to re-queue the message
-	if _, ok := c.ackMap[id]; ok {
-		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
-	}
+	//if _, ok := c.ackMap[id]; ok {
+	//	return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
+	//}
+
 	// everything is "probably" Ok, so we're going to put the message in queue
 	c.ackMap[id] = make(chan bool, 1)
-	tDelivery := c.pendingMap[id]
+	tMessage := c.pendingMap[id]
+
+	c.sequenceNumber++
+	tDelivery := ubroker.Delivery{
+		Message: tMessage,
+		ID: c.sequenceNumber,
+	}
+
 	go c.ttlHandler(ctx, tDelivery)
 	// pushing the message into the main channel
 	c.mainChannel <- tDelivery
@@ -151,7 +159,7 @@ func filterContextError(ctx context.Context) error {
 // Sets a timeout for TTL and re-queue the message after that time
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
 	// persisting the un-acknowledged message
-	c.pendingMap[delivery.ID] = delivery
+	c.pendingMap[delivery.ID] = delivery.Message
 	// TODO: Handle race condition
 	select {
 	case <-time.After(c.ttl):
