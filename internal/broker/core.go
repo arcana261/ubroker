@@ -1,4 +1,5 @@
 package broker
+
 import (
 	"context"
 	"github.com/arcana261/ubroker/pkg/ubroker"
@@ -37,7 +38,6 @@ type Core struct {
 	queueGroup       sync.WaitGroup
 	syncCore         sync.Mutex
 }
-
 type request struct {
 	msg     ubroker.Delivery
 	ttlTime time.Time
@@ -70,7 +70,7 @@ func (core *Core) IsClosed() bool {
 }
 func (core *Core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	// TODO:‌ implement me
-	//return nil, errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
+	//return errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
 	if ctx.Err() == context.Canceled {
 		return nil, ctx.Err()
 	}
@@ -87,7 +87,6 @@ func (core *Core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error)
 	core.delivered = true
 	return core.deliveryEntry, nil
 }
-
 func (core *Core) Acknowledge(ctx context.Context, id int) error {
 	// TODO:‌ implement me
 	//return errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
@@ -105,35 +104,33 @@ func (core *Core) Acknowledge(ctx context.Context, id int) error {
 	if core.delivered == false {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	var indexID = -1
-	for index, message := range core.publishEntry {
+	var index = -1
+	for counter, message := range core.publishEntry {
 		if message.msg.ID == id {
-			indexID = index
+			index = counter
 			break
 		}
 	}
-	var ackIndex = -1
-	for index, ids := range core.acknowledgeEntry {
+	var ackId = -1
+	for counter, ids := range core.acknowledgeEntry {
 		if ids == id {
-			ackIndex = index
+			ackId = counter
 			break
 		}
 	}
-	if indexID == -1 {
+	if index == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	if ackIndex != -1 {
+	if ackId != -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	if time.Now().Sub(core.publishEntry[indexID].ttlTime) > core.ttl {
+	if time.Now().Sub(core.publishEntry[index].ttlTime) > core.ttl {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	} else {
 		core.acknowledgeEntry = append(core.acknowledgeEntry, id)
 		return nil
 	}
-
 }
-
 func (core *Core) ReQueue(ctx context.Context, id int) error {
 	// TODO:‌ implement me
 	//return errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
@@ -151,37 +148,36 @@ func (core *Core) ReQueue(ctx context.Context, id int) error {
 	if core.delivered == false {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	var indexID = -1
-	for index, message := range core.publishEntry {
+	var index = -1
+	for counter, message := range core.publishEntry {
 		if message.msg.ID == id {
-			indexID = index
+			index = counter
 			break
 		}
 	}
-	if indexID == -1 {
+	if index == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	}
-	if time.Now().Sub(core.publishEntry[indexID].ttlTime) > core.ttl {
-		_ = core.reRequest(core.publishEntry[indexID])
-		core.publishEntry = append(core.publishEntry[:indexID], core.publishEntry[indexID+1:]...)
+	if time.Now().Sub(core.publishEntry[index].ttlTime) > core.ttl {
+		_ = core.reRequest(core.publishEntry[index])
+		core.publishEntry = append(core.publishEntry[:index], core.publishEntry[index+1:]...)
 		return errors.Wrap(ubroker.ErrInvalidID, "Error")
 	} else {
-		_ = core.reRequest(core.publishEntry[indexID])
-		core.publishEntry = append(core.publishEntry[:indexID], core.publishEntry[indexID+1:]...)
+		_ = core.reRequest(core.publishEntry[index])
+		core.publishEntry = append(core.publishEntry[:index], core.publishEntry[index+1:]...)
 		return nil
-
 	}
 }
 func (core *Core) reRequest(req request) error {
 	core.id = core.id + 1
-	var newMsg ubroker.Delivery
-	newMsg.Message = req.msg.Message
-	newMsg.ID = core.id
+	var newMessageBroker ubroker.Delivery
+	newMessageBroker.Message = req.msg.Message
+	newMessageBroker.ID = core.id
 	var newMessage = request{}
-	newMessage.msg = newMsg
+	newMessage.msg = newMessageBroker
 	newMessage.ttlTime = time.Now()
 	core.publishEntry = append(core.publishEntry, newMessage)
-	core.deliveryEntry <- newMsg
+	core.deliveryEntry <- newMessageBroker
 	return nil
 }
 func (core *Core) Publish(ctx context.Context, message ubroker.Message) error {
@@ -198,17 +194,18 @@ func (core *Core) Publish(ctx context.Context, message ubroker.Message) error {
 	if core.isClosed == true {
 		return ubroker.ErrClosed
 	}
+	//request{message,0,""}
+	//_ = core.reRequest(core.publishEntry[request{message,0,""}])
 	core.id = core.id + 1
-	var newMsg ubroker.Delivery
-	newMsg.Message = message
-	newMsg.ID = core.id
-	core.deliveryEntry <- newMsg
+	var newMessageBroker ubroker.Delivery
+	newMessageBroker.Message = message
+	newMessageBroker.ID = core.id
+	core.deliveryEntry <- newMessageBroker
 	var newMessage = request{}
-	newMessage.msg = newMsg
+	newMessage.msg = newMessageBroker
 	newMessage.ttlTime = time.Now()
 	core.publishEntry = append(core.publishEntry, newMessage)
 	return nil
-
 }
 func (core *Core) Close() error {
 	// TODO:‌ implement me
