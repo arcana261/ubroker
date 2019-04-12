@@ -11,6 +11,7 @@ import (
 
 var (
 	lastMessageID = 0
+	mutexId = sync.Mutex{}
 )
 // New creates a new instance of ubroker.Broker
 // with given `ttl`. `ttl` determines time in which
@@ -27,6 +28,8 @@ func New(ttl time.Duration) ubroker.Broker {
 		doneMessages:      make(map[int]ubroker.Delivery, math.MaxInt16),
 		mutex:             sync.Mutex{},
 		publishMutex:      sync.Mutex{},
+		deliveryMutex:      sync.Mutex{},
+
 	}
 }
 
@@ -40,6 +43,7 @@ type core struct {
 	doneMessages      map[int]ubroker.Delivery
 	mutex             sync.Mutex
 	publishMutex      sync.Mutex
+	deliveryMutex      sync.Mutex
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
@@ -108,8 +112,7 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		return ubroker.ErrClosed
 	default:
 	}
-	id := lastMessageID
-	lastMessageID++
+	id := getID()
 	br := ubroker.Delivery{Message: message, ID: id}
 	c.mutex.Lock()
 	c.messageChannels[id] = make(chan bool)
@@ -135,7 +138,9 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		case <-c.isClosed:
 			return
 		default:
+			c.deliveryMutex.Lock()
 			c.deliveryChannel <- m
+			c.deliveryMutex.Unlock()
 			go c.WaitAck(ctx, m)
 		}
 	}()
@@ -149,7 +154,9 @@ func (c *core) Close() error {
 		return nil
 	default:
 		close(c.isClosed)
+		c.deliveryMutex.Lock()
 		close(c.deliveryChannel)
+		c.deliveryMutex.Unlock()
 		return nil
 	}
 }
@@ -169,4 +176,10 @@ func (c *core) WaitAck(ctx context.Context, message ubroker.Delivery) {
 	case <-ctx.Done():
 
 	}
+}
+func getID() int {
+	mutexId.Lock()
+	defer mutexId.Unlock()
+	lastMessageID++
+	return lastMessageID
 }
