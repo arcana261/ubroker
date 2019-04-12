@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/meshkati/ubroker/pkg/ubroker"
@@ -32,7 +33,7 @@ type core struct {
 	pendingMap     map[int]ubroker.Delivery
 
 	ttl time.Duration
-
+	sequenceMutex sync.Mutex
 	closed bool
 }
 
@@ -58,8 +59,10 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// check if the id is not exists
-	// TODO: Handle race condition
 	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+" is not committed yet.")
 	}
@@ -82,8 +85,10 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "ReQueue:: The broker is closed.")
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// check if the id is not exists
-	// TODO: Handle race condition
 	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
 	}
@@ -110,8 +115,10 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "Publish:: The broker is closed.")
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// Pushing into the channel
-	// TODO: Handle race condition on the sequence number
 	c.sequenceNumber++
 	delivery := ubroker.Delivery{
 		ID:      c.sequenceNumber,
