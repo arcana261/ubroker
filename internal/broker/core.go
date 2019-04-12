@@ -134,14 +134,15 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	}
 
 	c.publishOrderMutex.Lock()
-	//if !<-c.isClosed {
-	//if _, ok := <- c.publishQueue; ok {
 
-
+	select {
+	case <-c.isClosed:
+		return nil
+	default:
+	}
 	
-		c.publishQueue <- message
-	//}
-	//}
+	c.publishQueue <- message
+
 	c.publishOrderMutex.Unlock()
 	go func() {
 		//c.writeWaitGp.Add(1)
