@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amirmh/ubroker/internal/server"
-	"github.com/amirmh/ubroker/pkg/ubroker"
+	"github.com/AMIRmh/ubroker/internal/server"
+	"github.com/AMIRmh/ubroker/pkg/ubroker"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )

@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/amirmh/ubroker.svg?branch=master)](https://travis-ci.org/amirmh/ubroker) [![Join the chat at https://gitter.im/amirmh-ubroker/community](https://badges.gitter.im/amirmh-ubroker/community.svg)](https://gitter.im/amirmh-ubroker/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build Status](https://travis-ci.org/AMIRmh/ubroker.svg?branch=master)](https://travis-ci.org/AMIRmh/ubroker) [![Join the chat at https://gitter.im/AMIRmh-ubroker/community](https://badges.gitter.im/AMIRmh-ubroker/community.svg)](https://gitter.im/AMIRmh-ubroker/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 # ubroker
 

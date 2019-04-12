@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="19211427-d95f-4d83-a06e-2a75d1f6f241" name="Default" comment="">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cmd/ubroker/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/ubroker/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/broker/core.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/broker/core.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/broker/core_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/broker/core_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/server/http.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/server/http.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/server/http_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/server/http_test.go" afterDir="false" />
-    </list>
+    <list default="true" id="19211427-d95f-4d83-a06e-2a75d1f6f241" name="Default" comment="" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -21,7 +14,7 @@
         <entry file="file://$PROJECT_DIR$/internal/broker/core_test.go">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="408">
-              <caret line="254" column="23" lean-forward="true" selection-start-line="254" selection-start-column="23" selection-end-line="254" selection-end-column="23" />
+              <caret line="254" column="23" selection-start-line="254" selection-start-column="23" selection-end-line="254" selection-end-column="23" />
               <folding>
                 <element signature="e#21#288#0" expanded="true" />
               </folding>
@@ -32,8 +25,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/internal/broker/core.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="391">
-              <caret line="181" column="32" selection-start-line="181" selection-start-column="32" selection-end-line="181" selection-end-column="32" />
+            <state relative-caret-position="247">
+              <caret line="137" column="33" selection-start-line="137" selection-start-column="33" selection-end-line="137" selection-end-column="33" />
               <folding>
                 <element signature="e#16#103#0" expanded="true" />
               </folding>
@@ -234,21 +227,6 @@
     </recent_temporary>
   </component>
   <component name="TestHistory">
-    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 15m 51s.xml">
-      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 16m 07s.xml">
-      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 18m 05s.xml">
-      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 19m 49s.xml">
-      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 20m 08s.xml">
-      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
-    </history-entry>
     <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 34m 41s.xml">
       <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
     </history-entry>
@@ -262,6 +240,21 @@
       <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
     </history-entry>
     <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 36m 38s.xml">
+      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 38m 03s.xml">
+      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 38m 07s.xml">
+      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 38m 10s.xml">
+      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 39m 30s.xml">
+      <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_github_com_amirmh_ubroker_internal_broker - 2019.04.12 at 18h 39m 37s.xml">
       <configuration name="go test github.com/amirmh/ubroker/internal/broker" configurationId="GoTestRunConfiguration" />
     </history-entry>
   </component>
@@ -467,7 +460,7 @@
     <entry file="file://$PROJECT_DIR$/internal/broker/core_test.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="408">
-          <caret line="254" column="23" lean-forward="true" selection-start-line="254" selection-start-column="23" selection-end-line="254" selection-end-column="23" />
+          <caret line="254" column="23" selection-start-line="254" selection-start-column="23" selection-end-line="254" selection-end-column="23" />
           <folding>
             <element signature="e#21#288#0" expanded="true" />
           </folding>
@@ -476,8 +469,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/internal/broker/core.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="391">
-          <caret line="181" column="32" selection-start-line="181" selection-start-column="32" selection-end-line="181" selection-end-column="32" />
+        <state relative-caret-position="247">
+          <caret line="137" column="33" selection-start-line="137" selection-start-column="33" selection-end-line="137" selection-end-column="33" />
           <folding>
             <element signature="e#16#103#0" expanded="true" />
           </folding>

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amirmh/ubroker/internal/broker"
-	"github.com/amirmh/ubroker/pkg/ubroker"
+	"github.com/AMIRmh/ubroker/internal/broker"
+	"github.com/AMIRmh/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"
