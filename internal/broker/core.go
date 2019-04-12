@@ -135,7 +135,12 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 
 	c.publishOrderMutex.Lock()
 	//if !<-c.isClosed {
+	//if _, ok := <- c.publishQueue; ok {
+
+
+	
 		c.publishQueue <- message
+	//}
 	//}
 	c.publishOrderMutex.Unlock()
 	go func() {
