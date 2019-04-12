@@ -260,8 +260,6 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldReQueueUponHalfSecondTTL() {
 	s.publish("hello2")
 	msg2 := <-delivery
 	time.Sleep(750 * time.Millisecond)
-	fmt.Println(msg1)
-	fmt.Println(msg2)
 	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg2.ID))
 	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg2.ID))
 	msg3 := <-delivery
