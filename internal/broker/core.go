@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -69,23 +68,25 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	if c.closed {
 		return nil, ubroker.ErrClosed
 	}
+	c.mut.Lock()
 	c.deliveryStarted = true
-	//c.wg.Done()
+	c.mut.Unlock()
 	return c.brokerChan, nil
 	//return nil, errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	fmt.Println("id", id)
+	c.mut.Lock()
 	if c.closed {
+		c.mut.Unlock()
 		return ubroker.ErrClosed
 	}
 	if contextProblem(ctx) {
+		c.mut.Unlock()
 		return ctx.Err()
 	}
 	temp := false
-	c.mut.Lock()
-	fmt.Println("locked in ack")
+
 	if c.deliveryStarted {
 		temp = true
 	}
@@ -96,12 +97,10 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 
 	if !temp {
-		fmt.Println("locked in ack released")
 		c.mut.Unlock()
 		return errors.Wrap(ubroker.ErrInvalidID, "invalid Id")
 	}
 	if c.closed {
-		fmt.Println("locked in ack released")
 		c.mut.Unlock()
 
 		return ubroker.ErrClosed
@@ -109,14 +108,11 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	c.receivedAck = append(c.receivedAck, id)
 	for i, element := range c.publishedQueue {
 		if element.ID == id {
-			fmt.Println("-")
 			c.publishedQueue[i].receivedAckChannel <- id
-			fmt.Println("--")
 			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
 			break
 		}
 	}
-	fmt.Println("locked in ack released")
 	c.mut.Unlock()
 
 	//c.wg.Done()
@@ -135,7 +131,6 @@ func (c *core) DoingReQueue(ctx context.Context, id int) {
 			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
 			c.publishedQueue = append(c.publishedQueue, v2)
 			c.brokerChan <- v
-			fmt.Println("locked released doing requeue")
 			c.mut.Unlock()
 			go c.HandelingTTL(ctx, v2)
 			break
@@ -145,16 +140,12 @@ func (c *core) DoingReQueue(ctx context.Context, id int) {
 
 }
 func (c *core) HandelingTTL(ctx context.Context, element item) {
-	fmt.Println("ha?")
 	select {
 	case <-time.After(c.ttl):
-		fmt.Println("inja? ")
 		c.mut.Lock()
-		fmt.Println("locked in handeling ttl ")
 		c.DoingReQueue(ctx, element.ID)
 		return
 	case <-element.receivedAckChannel:
-		fmt.Println("what ?")
 		return
 	case <-c.closedChan:
 		return
@@ -162,14 +153,11 @@ func (c *core) HandelingTTL(ctx context.Context, element item) {
 }
 func (c *core) ReQueue(ctx context.Context, id int) error {
 	c.mut.Lock()
-	fmt.Println("locked here requqeue!")
 	if c.closed {
-		fmt.Println("locked requeue released")
 		c.mut.Unlock()
 		return ubroker.ErrClosed
 	}
 	if contextProblem(ctx) {
-		fmt.Println("locked requeue released")
 		c.mut.Unlock()
 		return ctx.Err()
 	}
@@ -188,7 +176,6 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		}
 	}
 	if !temp {
-		fmt.Println("locked requeue released")
 		c.mut.Unlock()
 
 		return errors.Wrap(ubroker.ErrInvalidID, "invalid Id")
@@ -203,7 +190,6 @@ func (c *core) DoingPublish(ctx context.Context, message ubroker.Message) {
 	v2 := item{Message: message, ID: c.lastIdValue, receivedAckChannel: make(chan int, 10)}
 	c.publishedQueue = append(c.publishedQueue, v2)
 	c.brokerChan <- v
-	fmt.Println("locked doing publish released")
 	c.mut.Unlock()
 
 	c.HandelingTTL(ctx, v2)
@@ -214,7 +200,6 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		return ctx.Err()
 	}
 	c.mut.Lock()
-	fmt.Println("locked publish")
 	if c.closed {
 		c.mut.Unlock()
 		return ubroker.ErrClosed
@@ -231,9 +216,7 @@ func (c *core) Close() error {
 	for i := 0; i < 4000; i++ {
 		c.closedChan <- true
 	}
-	fmt.Println("here wait")
 	c.mut.Lock()
-	fmt.Println("closed")
 	close(c.brokerChan)
 	c.closed = true
 	c.mut.Unlock()
