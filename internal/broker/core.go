@@ -16,7 +16,7 @@ func New(ttl time.Duration) ubroker.Broker {
 	return &core{
 		sequenceNumber: -1,
 		mainChannel:    make(chan ubroker.Delivery),
-		ackMap:			make(map[int]chan bool),
+		ackMap:         make(map[int]chan bool),
 		ttl:            ttl,
 		closed:         false,
 	}
@@ -24,9 +24,9 @@ func New(ttl time.Duration) ubroker.Broker {
 
 type core struct {
 	// TODO: add required fields
-	sequenceNumber	int
-	mainChannel		chan ubroker.Delivery
-	ackMap			map[int]chan bool
+	sequenceNumber int
+	mainChannel    chan ubroker.Delivery
+	ackMap         map[int]chan bool
 
 	ttl time.Duration
 
@@ -47,8 +47,27 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	// TODO:‌ implement me
-	return errors.Wrap(ubroker.ErrUnimplemented, "method Acknowledge is not implemented")
+	// check if context has error
+	if err := filterContextError(ctx); err != nil {
+		return err
+	}
+	// checking the broker
+	if c.closed {
+		return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
+	}
+	// check if the id is not existed
+	// TODO: Handle race condition
+	if id > c.sequenceNumber {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+" is not committed yet.")
+	}
+	// check if it's going to re-acknowledgment
+	if _, ok := c.ackMap[id]; !ok {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: This id has been ACKed before.")
+	}
+	// everything is "probably" Ok, so we're going to mark the ACK
+	c.ackMap[id] <- true
+
+	return nil
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
@@ -100,9 +119,9 @@ func filterContextError(ctx context.Context) error {
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
 	// TODO: Handle race condition
 	select {
-	case <- time.After(c.ttl):
+	case <-time.After(c.ttl):
 		// TODO: re-queue
-	case <- c.ackMap[delivery.ID]:
+	case <-c.ackMap[delivery.ID]:
 		delete(c.ackMap, delivery.ID)
 		return
 	}
