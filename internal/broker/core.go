@@ -10,21 +10,6 @@ import (
 	"github.com/sneyes/ubroker/pkg/ubroker"
 )
 
-// New creates a new instance of ubroker.Broker
-// with given `ttl`. `ttl` determines time in which
-// we requeue an unacknowledged/unrequeued message
-// automatically.
-func New(ttl time.Duration) ubroker.Broker {
-	result := &core{
-		ttl: ttl,
-	}
-	result.messageList = make([]coreMsg, 0)
-	result.deliveryChan = make(chan ubroker.Delivery, 100000000)
-	result.idSet = make(map[int]bool)
-
-	return result
-}
-
 type coreMsg struct {
 	msgD        ubroker.Delivery
 	timeInQueue time.Time
@@ -34,39 +19,58 @@ type core struct {
 	messageList  []coreMsg
 	ttl          time.Duration
 	deliveryChan chan ubroker.Delivery
-	isClosed     bool
+	isClosed     chan bool
 	idSet        map[int]bool
+	sync.WaitGroup
 	sync.Mutex
 }
 
-func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
+//New broker
+func New(ttl time.Duration) ubroker.Broker {
+	result := &core{
+		ttl: ttl,
+	}
+	result.messageList = make([]coreMsg, 0)
+	result.deliveryChan = make(chan ubroker.Delivery, 100000)
+	result.idSet = make(map[int]bool)
+	result.isClosed = make(chan bool, 1)
+
+	return result
+}
+
+func (c *core) checksAndLocks(ctx context.Context) error {
 	c.Lock()
 	defer c.Unlock()
+	c.Add(1)
+	select {
+	case <-c.isClosed:
+		return ubroker.ErrClosed
+	default:
+	}
+
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
-	if c.isClosed {
-		return nil, errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
-	}
-	// for index, value := range c.messageList {
-	// 	_ = index
-	// 	c.deliveryChan <- value.msgD
-	// }
-	return c.deliveryChan, nil
+	return nil
 }
 
 func removeMessage(slice []coreMsg, s int) []coreMsg {
 	return append(slice[:s], slice[s+1:]...)
 }
+func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
+	defer c.Done()
+	err := c.checksAndLocks(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "Delivery error, Broker is closed")
+	}
+	return c.deliveryChan, nil
+}
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	c.Lock()
-	defer c.Unlock()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Acknowledge error, Broker is closed")
+	defer c.Done()
+	err := c.checksAndLocks(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Acknowledge error, Broker is closed")
 	}
 	ackMessageIndex := -1
 	for index, value := range c.messageList {
@@ -80,7 +84,6 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 
 	if time.Now().Sub(c.messageList[ackMessageIndex].timeInQueue) > c.ttl {
-		go c.ReQueue(ctx, id)
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
 	}
 	c.messageList = removeMessage(c.messageList, ackMessageIndex)
@@ -95,13 +98,10 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	c.Lock()
-	defer c.Unlock()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Requeue error, Broker is closed")
+	defer c.Done()
+	err := c.checksAndLocks(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Requeue error, Broker is closed")
 	}
 	requeueMessageIndex := -1
 	requeueMessageValue := &coreMsg{}
@@ -115,6 +115,7 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if requeueMessageIndex == -1 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Requeue error, ID not found")
 	}
+	ttlErr := time.Now().Sub(c.messageList[requeueMessageIndex].timeInQueue) > c.ttl
 	requeueMessageValue.timeInQueue = time.Now()
 	requeueMessageValue.msgD.ID = rand.Int()
 	for c.idSet[requeueMessageValue.msgD.ID] {
@@ -131,19 +132,18 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		_ = index
 		c.deliveryChan <- value.msgD
 	}
+	if ttlErr {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+	}
 	return nil
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	c.Lock()
-	defer c.Unlock()
-	if ctx.Err() != nil {
-		return ctx.Err()
+	defer c.Done()
+	err := c.checksAndLocks(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Publish error, Broker is closed")
 	}
-	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Publish error, Broker is closed")
-	}
-
 	msg := new(coreMsg)
 	msg.msgD.Message = message
 	msg.timeInQueue = time.Now()
@@ -158,12 +158,16 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
-	if c.isClosed {
-		return nil
-	}
 	c.Lock()
-	defer c.Unlock()
-	c.isClosed = true
+	select {
+	case <-c.isClosed:
+		_ = c
+	default:
+		close(c.isClosed)
+	}
+	c.Unlock()
+
+	c.Wait()
 	close(c.deliveryChan)
 	return nil
 }
