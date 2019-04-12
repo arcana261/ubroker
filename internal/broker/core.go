@@ -79,6 +79,9 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 	// everything is "probably" Ok, so we're going to mark the ACK
 	c.ackMap[id] <- true
+	// removing the message id from maps
+	delete(c.ackMap, id)
+	delete(c.pendingMap, id)
 
 	return nil
 }
@@ -103,9 +106,15 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
 	}
-	// check if it's going to re-queue the message
+	////check if it's going to re-queue the message
 	//if _, ok := c.ackMap[id]; ok {
 	//	return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
+	//}
+
+	//// check if it's going to re'queue the message (2nd approach)
+	//c.pendingMutex.Lock()
+	//if _, ok := c.pendingMap[id]; ok {
+	//		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
 	//}
 
 	// everything is "probably" Ok, so we're going to put the message in queue
@@ -173,20 +182,17 @@ func filterContextError(ctx context.Context) error {
 
 // Sets a timeout for TTL and re-queue the message after that time
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
-	c.pendingMutex.Lock()
+	//c.pendingMutex.Lock()
 	c.pendingMap[delivery.ID] = delivery.Message
-	c.pendingMutex.Unlock()
-	// TODO: Handle race condition
+	//c.pendingMutex.Unlock()
+	c.sequenceMutex.Lock()
+	ch := c.ackMap[delivery.ID]
+	c.sequenceMutex.Unlock()
+
 	select {
 	case <-time.After(c.ttl):
 		_ = c.ReQueue(ctx, delivery.ID)
-	case <-c.ackMap[delivery.ID]:
-		// handling race condition
-		c.sequenceMutex.Lock()
-		defer c.sequenceMutex.Unlock()
-
-		delete(c.ackMap, delivery.ID)
-		delete(c.pendingMap, delivery.ID)
+	case <-ch:
 		return
 	}
 }
