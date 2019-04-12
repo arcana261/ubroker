@@ -27,14 +27,14 @@ func New(ttl time.Duration) ubroker.Broker {
 
 type core struct {
 	// TODO: add required fields
-	sequenceNumber int
-	mainChannel    chan ubroker.Delivery
-	ackMap         map[int]chan bool
-	pendingMap     map[int]ubroker.Message
-
-	ttl           time.Duration
-	sequenceMutex sync.Mutex
-	closed        bool
+	sequenceNumber  int
+	mainChannel     chan ubroker.Delivery
+	ackMap          map[int]chan bool
+	pendingMap      map[int]ubroker.Message
+	ttl             time.Duration
+	sequenceMutex   sync.Mutex
+	closed          bool
+	deliveryStarted bool
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
@@ -47,6 +47,8 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 		return nil, errors.Wrap(ubroker.ErrClosed, "The broker is closed.")
 	}
 
+	c.deliveryStarted = true
+
 	return c.mainChannel, nil
 }
 
@@ -58,6 +60,10 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	// checking the broker
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
+	}
+	// check if delivery started
+	if !c.deliveryStarted {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Delivery is not started yet")
 	}
 	// handling race condition
 	c.sequenceMutex.Lock()
@@ -85,6 +91,10 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if c.closed {
 		return errors.Wrap(ubroker.ErrClosed, "ReQueue:: The broker is closed.")
 	}
+	// check if delivery started
+	if !c.deliveryStarted {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Delivery is not started yet")
+	}
 	// handling race condition
 	c.sequenceMutex.Lock()
 	defer c.sequenceMutex.Unlock()
@@ -104,7 +114,7 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	c.sequenceNumber++
 	tDelivery := ubroker.Delivery{
 		Message: tMessage,
-		ID: c.sequenceNumber,
+		ID:      c.sequenceNumber,
 	}
 
 	go c.ttlHandler(ctx, tDelivery)
