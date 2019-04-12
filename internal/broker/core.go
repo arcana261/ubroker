@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/amirmh/ubroker/pkg/ubroker"
@@ -10,7 +11,7 @@ import (
 )
 
 var (
-	lastID	int
+	lastID	int32
 )
 
 // New creates a new instance of ubroker.Broker
@@ -132,22 +133,26 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	default:
 	}
 
-
-	c.writeWaitGp.Add(1)
-	c.publishQueue <- message
+	c.publishOrderMutex.Lock()
+	//if !<-c.isClosed {
+		c.publishQueue <- message
+	//}
+	c.publishOrderMutex.Unlock()
 	go func() {
-		defer c.writeWaitGp.Done()
+		//c.writeWaitGp.Add(1)
+		//defer c.writeWaitGp.Done()
 		c.publishMutex.Lock()
 
-		lastID++
+		atomic.AddInt32(&lastID, 1)
 		brokerMsg := ubroker.Delivery{
 			Message: <-c.publishQueue,
-			ID:      lastID,
+			ID:      int(atomic.LoadInt32(&lastID)),
 		}
 		processingMsg := waitForAckStruct{
 			message:     brokerMsg,
 			ackChannnel: make(chan interface{}, 1),
 		}
+
 
 		c.processingMutex.Lock()
 		c.processingQueue[processingMsg.message.ID] = processingMsg
@@ -170,9 +175,13 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
-	c.writeWaitGp.Wait()
+	//c.writeWaitGp.Wait()
+	c.publishMutex.Lock()
+	c.publishOrderMutex.Lock()
 	close(c.deliveryChannel)
 	close(c.isClosed)
 	close(c.publishQueue)
+	c.publishOrderMutex.Unlock()
+	c.publishMutex.Unlock()
 	return nil
 }
