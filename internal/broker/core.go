@@ -16,6 +16,7 @@ func New(ttl time.Duration) ubroker.Broker {
 	return &core{
 		sequenceNumber: -1,
 		mainChannel:    make(chan ubroker.Delivery),
+		ackMap:			make(map[int]chan bool),
 		ttl:            ttl,
 		closed:         false,
 	}
@@ -23,8 +24,9 @@ func New(ttl time.Duration) ubroker.Broker {
 
 type core struct {
 	// TODO: add required fields
-	sequenceNumber int
-	mainChannel    chan ubroker.Delivery
+	sequenceNumber	int
+	mainChannel		chan ubroker.Delivery
+	ackMap			map[int]chan bool
 
 	ttl time.Duration
 
@@ -55,8 +57,27 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	// TODO:‌ implement me
-	return errors.Wrap(ubroker.ErrUnimplemented, "method Publish is not implemented")
+	// check if context has error
+	if err := filterContextError(ctx); err != nil {
+		return err
+	}
+	// checking the broker
+	if c.closed {
+		return errors.Wrap(ubroker.ErrClosed, "Publish:: The broker is closed.")
+	}
+	// Pushing into the channel
+	// TODO: Handle race condition on the sequence number
+	c.sequenceNumber++
+	delivery := ubroker.Delivery{
+		ID:      c.sequenceNumber,
+		Message: message,
+	}
+	c.ackMap[delivery.ID] = make(chan bool, 1)
+	go c.ttlHandler(ctx, delivery)
+	// push the message to channel
+	c.mainChannel <- delivery
+
+	return nil
 }
 
 func (c *core) Close() error {
