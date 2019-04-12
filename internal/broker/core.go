@@ -13,8 +13,8 @@ func New(ttl time.Duration) ubroker.Broker {
 	core := &Core{
 		deliveryEntry:    make(chan ubroker.Delivery, 100),
 		requeueEntry:     make(chan requeue),
-		publishEntry:     make([]request, 100),
-		acknowledgeEntry: make([]int, 100),
+		publishEntry:     make([]request, 0),
+		acknowledgeEntry: make([]int, 0),
 		ttl:              ttl,
 		delivered:        false,
 		isClosed:         false,
