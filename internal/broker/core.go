@@ -74,3 +74,14 @@ func filterContextError(ctx context.Context) error {
 
 	return nil
 }
+
+// Sets a timeout for TTL and re-queue the message after that time
+func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
+	// TODO: Handle race condition
+	select {
+	case <- time.After(c.ttl):
+		// TODO: re-queue
+	case <- c.ackMap[delivery.ID]:
+		return
+	}
+}
