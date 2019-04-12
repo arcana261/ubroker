@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/meshkati/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 )
 
