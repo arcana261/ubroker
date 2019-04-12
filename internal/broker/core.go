@@ -34,7 +34,6 @@ type core struct {
 	requeueMap      map[int]bool
 	ttl             time.Duration
 	sequenceMutex   sync.Mutex
-	pendingMutex    sync.Mutex
 	closed          bool
 	deliveryStarted bool
 }
@@ -44,6 +43,9 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	if err := filterContextError(ctx); err != nil {
 		return nil, ctx.Err()
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// checking the broker
 	if c.closed {
 		return nil, errors.Wrap(ubroker.ErrClosed, "The broker is closed.")
@@ -59,17 +61,18 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	if err := filterContextError(ctx); err != nil {
 		return err
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// checking the broker
 	if c.closed {
-		return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
+		//return errors.Wrap(ubroker.ErrClosed, "Acknowledge:: The broker is closed.")
+		return ubroker.ErrClosed
 	}
 	// check if delivery started
 	if !c.deliveryStarted {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Delivery is not started yet")
 	}
-	// handling race condition
-	c.sequenceMutex.Lock()
-	defer c.sequenceMutex.Unlock()
 	// check if the id is not exists
 	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Message with id="+string(id)+" is not committed yet.")
@@ -92,31 +95,23 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	if err := filterContextError(ctx); err != nil {
 		return err
 	}
+	// handling race condition
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
 	// checking the broker
 	if c.closed {
-		return errors.Wrap(ubroker.ErrClosed, "ReQueue:: The broker is closed.")
+		//return errors.Wrap(ubroker.ErrClosed, "ReQueue:: The broker is closed.")
+		return ubroker.ErrClosed
 	}
 	// check if delivery started
 	if !c.deliveryStarted {
 		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge:: Delivery is not started yet")
 	}
-	// handling race condition
-	c.sequenceMutex.Lock()
-	defer c.sequenceMutex.Unlock()
 	// check if the id is not exists
 	if id > c.sequenceNumber || id < 0 {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is not committed yet.")
 	}
 	////check if it's going to re-queue the message
-	//if _, ok := c.ackMap[id]; ok {
-	//	return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
-	//}
-
-	//// check if it's going to re'queue the message (2nd approach)
-	//c.pendingMutex.Lock()
-	//if _, ok := c.pendingMap[id]; ok {
-	//		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
-	//}
 	if _, ok := c.requeueMap[id]; ok {
 		return errors.Wrap(ubroker.ErrInvalidID, "ReQueue:: Message with id="+string(id)+" is already in the queue.")
 	}
@@ -151,13 +146,14 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	if err := filterContextError(ctx); err != nil {
 		return err
 	}
-	// checking the broker
-	if c.closed {
-		return errors.Wrap(ubroker.ErrClosed, "Publish:: The broker is closed.")
-	}
 	// handling race condition
 	c.sequenceMutex.Lock()
 	defer c.sequenceMutex.Unlock()
+	// checking the broker
+	if c.closed {
+		//return errors.Wrap(ubroker.ErrClosed, "Publish:: The broker is closed.")
+		return ubroker.ErrClosed
+	}
 	// Pushing into the channel
 	c.sequenceNumber++
 	delivery := ubroker.Delivery{
@@ -175,7 +171,9 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
-	// TODO:‌ implement me
+	c.sequenceMutex.Lock()
+	defer c.sequenceMutex.Unlock()
+
 	c.closed = true
 	close(c.mainChannel)
 
@@ -200,6 +198,7 @@ func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
 	select {
 	case <-time.After(c.ttl):
 		_ = c.ReQueue(ctx, delivery.ID)
+		return
 	case <-ch:
 		return
 	}
