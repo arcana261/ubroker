@@ -333,29 +333,21 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 	defer ticker.Stop()
 
 	s.prepareTest(1 * time.Second)
-	var i int
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
 		for {
-			//fmt.Print("---------->")
 			select {
 			case <-ticker.C:
-				//fmt.Print("---------->")
 				return
 
 			default:
-				i = i + 1
-				//fmt.Print("---------->")
 				err := s.broker.Publish(context.Background(), ubroker.Message{
 					Body: fmt.Sprint(rand.Intn(1000)),
 				})
-				//fmt.Print(i)
-				//fmt.Print("\n")
-
 				if err == ubroker.ErrClosed {
-					//fmt.Print("------------------")
 					return
 				}
 				s.Nil(err)
@@ -370,7 +362,7 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		//fmt.Print("-------------->")
+
 		delivery, err := s.broker.Delivery(context.Background())
 		s.Nil(err)
 		if err != nil {
