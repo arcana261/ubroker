@@ -10,7 +10,7 @@ import (
 
 // New creates a new instance of ubroker.Broker
 // with given `ttl`. `ttl` determines time in which
-// we requeue an unacknowledged/unrequeued message
+// we requeue an unacknowledged/un-re-queued message
 // automatically.
 func New(ttl time.Duration) ubroker.Broker {
 	return &core{}
@@ -43,4 +43,13 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 func (c *core) Close() error {
 	// TODO:‌ implement me
 	return errors.Wrap(ubroker.ErrUnimplemented, "method Close is not implemented")
+}
+
+// Checks if the context has an error, returns true if the deadline has exceeded, or context had canceled
+func filterContextError(ctx context.Context) error {
+	if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
+		return ctx.Err()
+	}
+
+	return nil
 }
