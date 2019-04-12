@@ -33,6 +33,7 @@ type core struct {
 	pendingMap      map[int]ubroker.Message
 	ttl             time.Duration
 	sequenceMutex   sync.Mutex
+	pendingMutex	sync.Mutex
 	closed          bool
 	deliveryStarted bool
 }
@@ -108,7 +109,6 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	//}
 
 	// everything is "probably" Ok, so we're going to put the message in queue
-	c.ackMap[id] = make(chan bool, 1)
 	tMessage := c.pendingMap[id]
 
 	c.sequenceNumber++
@@ -116,10 +116,14 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		Message: tMessage,
 		ID:      c.sequenceNumber,
 	}
+	// setting the acknowledge channel
+	c.ackMap[c.sequenceNumber] = make(chan bool, 1)
 
 	go c.ttlHandler(ctx, tDelivery)
 	// pushing the message into the main channel
 	c.mainChannel <- tDelivery
+	// invalidate the previous id
+	c.ackMap[id] <- false
 
 	return nil
 }
@@ -169,13 +173,18 @@ func filterContextError(ctx context.Context) error {
 
 // Sets a timeout for TTL and re-queue the message after that time
 func (c *core) ttlHandler(ctx context.Context, delivery ubroker.Delivery) {
-	// persisting the un-acknowledged message
+	c.pendingMutex.Lock()
 	c.pendingMap[delivery.ID] = delivery.Message
+	c.pendingMutex.Unlock()
 	// TODO: Handle race condition
 	select {
 	case <-time.After(c.ttl):
 		_ = c.ReQueue(ctx, delivery.ID)
 	case <-c.ackMap[delivery.ID]:
+		// handling race condition
+		c.sequenceMutex.Lock()
+		defer c.sequenceMutex.Unlock()
+
 		delete(c.ackMap, delivery.ID)
 		delete(c.pendingMap, delivery.ID)
 		return
