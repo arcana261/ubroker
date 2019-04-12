@@ -36,12 +36,12 @@ type core struct {
 	deliveryChan chan ubroker.Delivery
 	isClosed     bool
 	idSet        map[int]bool
-	mutex        sync.Mutex
+	sync.Mutex
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -60,8 +60,8 @@ func removeMessage(slice []coreMsg, s int) []coreMsg {
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -95,8 +95,8 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -135,8 +135,8 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -158,8 +158,11 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	if c.isClosed {
+		return nil
+	}
+	c.Lock()
+	defer c.Unlock()
 	c.isClosed = true
 	close(c.deliveryChan)
 	return nil
