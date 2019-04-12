@@ -48,10 +48,10 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	if c.isClosed {
 		return nil, errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
 	}
-	for index, value := range c.messageList {
-		_ = index
-		c.deliveryChan <- value.msgD
-	}
+	// for index, value := range c.messageList {
+	// 	_ = index
+	// 	c.deliveryChan <- value.msgD
+	// }
 	return c.deliveryChan, nil
 }
 
@@ -95,17 +95,13 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	// ReQueue is called by clients to declare that specified message id should be put back in front of the queue. We demand following:
-	//
-	// 2. Re-acknowledgement and Requeue of id should cause ErrInvalidID
-	// 3. Should prevent requeue due to TTL
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
+		return errors.Wrap(ubroker.ErrClosed, "Requeue error, Broker is closed")
 	}
 	requeueMessageIndex := -1
 	requeueMessageValue := &coreMsg{}
@@ -117,7 +113,7 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		}
 	}
 	if requeueMessageIndex == -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+		return errors.Wrap(ubroker.ErrInvalidID, "Requeue error, ID not found")
 	}
 	requeueMessageValue.timeInQueue = time.Now()
 	requeueMessageValue.msgD.ID = rand.Int()
@@ -145,7 +141,7 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		return ctx.Err()
 	}
 	if c.isClosed {
-		return errors.Wrap(ubroker.ErrClosed, "Delivery error, Broker is closed")
+		return errors.Wrap(ubroker.ErrClosed, "Publish error, Broker is closed")
 	}
 
 	msg := new(coreMsg)
