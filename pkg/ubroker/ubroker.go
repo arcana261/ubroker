@@ -27,7 +27,7 @@ type Broker interface {
 	// messages to consumers.
 	// We require following:
 	//
-	// 1. Resulting read-only channel is unique (it doesn
+	// 1. Resulting read-only channel is unique (it does
 	//    not change each time you call it)
 	// 2. If `ctx` is canceled or timed out, `ctx.Err()` is
 	//    returned
@@ -36,8 +36,8 @@ type Broker interface {
 	Delivery(ctx context.Context) (<-chan Delivery, error)
 
 	// Acknowledge is called by clients to declare that
-	// specified message id has been successfuly processed
-	// and should not be requeued to queue and we have to
+	// specified message id has been successfully processed
+	// and should not be re-queued to queue and we have to
 	// remove it.
 	// We demand following:
 	//
@@ -84,7 +84,7 @@ type HTTPServer interface {
 
 // Message encapsulates a queued message
 type Message struct {
-	// Body is an abitrary client-defined string
+	// Body is an arbitrary client-defined string
 	Body string `json:"body"`
 }
 
