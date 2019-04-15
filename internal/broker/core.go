@@ -52,7 +52,11 @@ func (c *core) waitForAck(pd pendingDelivery) {
 			id:        pd.delivery.ID,
 			resultErr: make(chan error, 1),
 		}
-		c.requeueReqChannel <- r
+		select {
+		case c.requeueReqChannel <- r:
+		case <-c.closed:
+			return
+		}
 
 	case <-c.closed:
 		return
@@ -225,7 +229,11 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 			return ctx.Err()
 		case err := <-r.resultErr:
 			return err
+		case <-c.closed:
+			return ubroker.ErrClosed
 		}
+	case <-c.closed:
+		return ubroker.ErrClosed
 	}
 }
 
@@ -243,11 +251,15 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		return ctx.Err()
 	case c.requeueReqChannel <- r:
 		select {
+		case <-c.closed:
+			return ubroker.ErrClosed
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-r.resultErr:
 			return err
 		}
+	case <-c.closed:
+		return ubroker.ErrClosed
 	}
 }
 
@@ -270,6 +282,8 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	case <-c.closed:
+		return ubroker.ErrClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
