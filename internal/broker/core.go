@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -16,12 +15,13 @@ type coreMsg struct {
 }
 
 type core struct {
-	messageList  []coreMsg
-	ttl          time.Duration
-	deliveryChan chan ubroker.Delivery
-	isClosed     chan bool
-	idSet        []int
-	wg           *sync.WaitGroup
+	messageList   []coreMsg
+	ttl           time.Duration
+	deliveryChan  chan ubroker.Delivery
+	deliveryGiven bool
+	isClosed      chan bool
+	idSet         []int
+	wg            *sync.WaitGroup
 	sync.Mutex
 }
 
@@ -35,7 +35,7 @@ func New(ttl time.Duration) ubroker.Broker {
 	result.deliveryChan = make(chan ubroker.Delivery, 100000)
 	result.idSet = make([]int, 0)
 	result.isClosed = make(chan bool, 1)
-
+	result.deliveryGiven = false
 	return result
 }
 func indexOf(value int, array []int) int {
@@ -58,25 +58,35 @@ func (c *core) errorChecks(ctx context.Context) error {
 	}
 	return nil
 }
-
 func removeMessage(slice []coreMsg, s int) []coreMsg {
 	return append(slice[:s], slice[s+1:]...)
 }
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
+	c.Lock()
+	defer c.Unlock()
 	err := c.errorChecks(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "Delivery error")
 	}
+	c.deliveryGiven = true
 	return c.deliveryChan, nil
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	err := c.errorChecks(ctx)
-	if err != nil {
-		return errors.Wrap(err, "Acknowledge error")
-	}
 	c.Lock()
 	defer c.Unlock()
+	c.wg.Add(1)
+	defer c.wg.Done()
+	err := c.errorChecks(ctx)
+	if err != nil {
+		if err == ubroker.ErrClosed {
+			return err
+		}
+		return errors.Wrap(err, "Acknowledge error")
+	}
+	if !c.deliveryGiven {
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, not delivered yet")
+	}
 	ackMessageIndex := -1
 	for index, value := range c.messageList {
 		if value.msgD.ID == id {
@@ -89,27 +99,26 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 
 	if time.Now().Sub(c.messageList[ackMessageIndex].timeInQueue) > c.ttl {
-		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge TTL error, ID not found")
 	}
 	c.messageList = removeMessage(c.messageList, ackMessageIndex)
-	for len(c.deliveryChan) > 0 {
-		<-c.deliveryChan
-	}
-	for index, value := range c.messageList {
-		_ = index
-		c.deliveryChan <- value.msgD
-	}
 	return nil
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	err := c.errorChecks(ctx)
-	if err != nil {
-		return errors.Wrap(err, "Requeue error")
-	}
-	c.wg.Add(1)
 	c.Lock()
 	defer c.Unlock()
+	err := c.errorChecks(ctx)
+	if err != nil {
+		if err == ubroker.ErrClosed {
+			return err
+		}
+		return errors.Wrap(err, "Requeue error")
+	}
+	if !c.deliveryGiven {
+		return errors.Wrap(ubroker.ErrInvalidID, "Requeue error, not delivered yet")
+	}
+	c.wg.Add(1)
 	defer c.wg.Done()
 	requeueMessageIndex := -1
 	requeueMessageValue := &coreMsg{}
@@ -125,42 +134,39 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	}
 	ttlErr := time.Now().Sub(c.messageList[requeueMessageIndex].timeInQueue) > c.ttl
 	requeueMessageValue.timeInQueue = time.Now()
-	requeueMessageValue.msgD.ID = rand.Int()
+	requeueMessageValue.msgD.ID++
 	for indexOf(requeueMessageValue.msgD.ID, c.idSet) != -1 {
-		requeueMessageValue.msgD.ID = rand.Int()
+		requeueMessageValue.msgD.ID++
 	}
 	c.idSet = append(c.idSet, requeueMessageValue.msgD.ID)
 	c.messageList = removeMessage(c.messageList, requeueMessageIndex)
 	c.messageList = append(c.messageList, *requeueMessageValue)
 
-	for len(c.deliveryChan) > 0 {
-		<-c.deliveryChan
-	}
-	for index, value := range c.messageList {
-		_ = index
-		c.deliveryChan <- value.msgD
-	}
+	c.deliveryChan <- requeueMessageValue.msgD
 	if ttlErr {
-		return errors.Wrap(ubroker.ErrInvalidID, "Acknowledge error, ID not found")
+		return errors.Wrap(ubroker.ErrInvalidID, "Requeue TTL error, ID not found")
 	}
 	return nil
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
+	c.Lock()
+	defer c.Unlock()
 	err := c.errorChecks(ctx)
 	if err != nil {
+		if err == ubroker.ErrClosed {
+			return err
+		}
 		return errors.Wrap(err, "Publish error")
 	}
 	c.wg.Add(1)
-	c.Lock()
-	defer c.Unlock()
 	defer c.wg.Done()
 	msg := new(coreMsg)
 	msg.msgD.Message = message
 	msg.timeInQueue = time.Now()
-	msg.msgD.ID = rand.Int()
+	msg.msgD.ID = 1
 	for indexOf(msg.msgD.ID, c.idSet) != -1 {
-		msg.msgD.ID = rand.Int()
+		msg.msgD.ID++
 	}
 	c.idSet = append(c.idSet, msg.msgD.ID)
 
@@ -170,6 +176,14 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 }
 
 func (c *core) Close() error {
+	c.Lock()
+	defer c.Unlock()
+	select {
+	case <-c.isClosed:
+		return nil
+	default:
+		c.isClosed <- true
+	}
 	c.wg.Wait()
 	close(c.isClosed)
 	close(c.deliveryChan)
