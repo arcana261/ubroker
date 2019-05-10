@@ -26,7 +26,7 @@ ubroker: $(SRCS) pkg/ubroker/ubroker.pb.go | dependencies generate ##‌ Compile
 generate: pkg/ubroker/ubroker.pb.go
 
 pkg/ubroker/ubroker.pb.go: api/ubroker.proto
-	protoc --go_out=plugins=grpc:$(GOPATH)/src $<
+	$(PROTOC) $(PROTOC_OPTIONS) --go_out=plugins=grpc:$(GOPATH)/src $<
 
 .pre-check-go:
 ifeq (,$(shell which go))
@@ -40,3 +40,6 @@ ifeq (NONE,$(GOPATH))
 endif
 	go get -v github.com/golang/protobuf/protoc-gen-go
 	go get -v github.com/vektra/mockery/.../
+
+PROTOC ?= protoc
+PROTOC_OPTIONS ?=
