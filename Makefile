@@ -18,6 +18,7 @@ dependencies: | generate ##‌ Download dependencies
 dev-dependencies: dependencies ##‌ Download development dependencies
 	go get -v github.com/stretchr/testify/suite
 	go get -v github.com/stretchr/testify/assert
+	go get -v github.com/phayes/freeport
 
 ubroker: $(SRCS) | dependencies generate ##‌ Compile us
 	go build -o ubroker ./cmd/ubroker
