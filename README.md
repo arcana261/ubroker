@@ -2,7 +2,9 @@
 
 # ubroker
 
-#‌ Current Phase 2
+Welcome to phase2!
+
+# Current Phase 2
 
 Greetings! As you may already know, In this phase of the project we are about to take
 our broker system which we implemented prevously, take out it's HTTP‌ (JSON) layer and replace
