@@ -2,9 +2,10 @@ package broker
 
 import (
 	"context"
-	"github.com/pkg/errors"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/arcana261/ubroker/pkg/ubroker"
 )
@@ -17,11 +18,11 @@ func New(ttl time.Duration) ubroker.Broker {
 	broker := &core{
 		ttl:             ttl,
 		requests:        make(chan interface{}),
-		deliveryChannel: make(chan ubroker.Delivery),
+		deliveryChannel: make(chan *ubroker.Delivery),
 		closed:          make(chan bool, 1),
 		closing:         make(chan bool, 1),
-		pending:         make(map[int]ubroker.Message),
-		messages:        []ubroker.Delivery{{}},
+		pending:         make(map[int32]*ubroker.Message),
+		messages:        []*ubroker.Delivery{{}},
 	}
 
 	broker.wg.Add(1)
@@ -31,7 +32,7 @@ func New(ttl time.Duration) ubroker.Broker {
 }
 
 type core struct {
-	nextID int
+	nextID int32
 	ttl    time.Duration
 
 	mutex   sync.Mutex
@@ -39,36 +40,36 @@ type core struct {
 	wg      sync.WaitGroup
 
 	requests        chan interface{}
-	deliveryChannel chan ubroker.Delivery
+	deliveryChannel chan *ubroker.Delivery
 	closed          chan bool
 	closing         chan bool
-	pending         map[int]ubroker.Message
-	messages        []ubroker.Delivery
-	channel         chan ubroker.Delivery
+	pending         map[int32]*ubroker.Message
+	messages        []*ubroker.Delivery
+	channel         chan *ubroker.Delivery
 }
 
 type acknowledgeRequest struct {
-	id       int
+	id       int32
 	response chan acknowledgeResponse
 }
 
 type acknowledgeResponse struct {
-	id  int
+	id  int32
 	err error
 }
 
 type requeueRequest struct {
-	id       int
+	id       int32
 	response chan requeueResponse
 }
 
 type requeueResponse struct {
-	id  int
+	id  int32
 	err error
 }
 
 type publishRequest struct {
-	message  ubroker.Message
+	message  *ubroker.Message
 	response chan publishResponse
 }
 
@@ -76,7 +77,7 @@ type publishResponse struct {
 	err error
 }
 
-func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
+func (c *core) Delivery(ctx context.Context) (<-chan *ubroker.Delivery, error) {
 	if isCanceledContext(ctx) {
 		return nil, ctx.Err()
 	}
@@ -89,7 +90,7 @@ func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	return c.deliveryChannel, nil
 }
 
-func (c *core) Acknowledge(ctx context.Context, id int) error {
+func (c *core) Acknowledge(ctx context.Context, id int32) error {
 	if isCanceledContext(ctx) {
 		return ctx.Err()
 	}
@@ -117,7 +118,7 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 }
 
-func (c *core) ReQueue(ctx context.Context, id int) error {
+func (c *core) ReQueue(ctx context.Context, id int32) error {
 	if isCanceledContext(ctx) {
 		return ctx.Err()
 	}
@@ -145,7 +146,7 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 	}
 }
 
-func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
+func (c *core) Publish(ctx context.Context, message *ubroker.Message) error {
 	if isCanceledContext(ctx) {
 		return ctx.Err()
 	}
@@ -208,14 +209,14 @@ func (c *core) startDelivery() {
 
 		case c.channel <- c.messages[0]:
 			if c.channel != nil {
-				c.pending[c.messages[0].ID] = c.messages[0].Message
+				c.pending[c.messages[0].Id] = c.messages[0].Message
 				c.wg.Add(1)
-				go c.snooze(c.messages[0].ID)
+				go c.snooze(c.messages[0].Id)
 
 				c.messages = c.messages[1:]
 				if len(c.messages) == 0 {
 					c.channel = nil
-					c.messages = []ubroker.Delivery{{}}
+					c.messages = []*ubroker.Delivery{{}}
 				}
 			}
 		}
@@ -301,23 +302,23 @@ func (c *core) handlePublish(request *publishRequest) publishResponse {
 	defer c.wg.Done()
 
 	if c.channel == nil {
-		c.messages = []ubroker.Delivery{}
+		c.messages = []*ubroker.Delivery{}
 		c.channel = c.deliveryChannel
 	}
 
 	id := c.nextID
 	c.nextID++
 	newDelivery := ubroker.Delivery{
-		ID:      id,
+		Id:      id,
 		Message: request.message,
 	}
 
-	c.messages = append(c.messages, newDelivery)
+	c.messages = append(c.messages, &newDelivery)
 
 	return publishResponse{err: nil}
 }
 
-func (c *core) snooze(id int) {
+func (c *core) snooze(id int32) {
 	defer c.wg.Done()
 	ticker := time.NewTicker(c.ttl)
 	defer ticker.Stop()

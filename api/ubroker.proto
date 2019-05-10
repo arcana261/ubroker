@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package ubroker;
+option go_package = "github.com/arcana261/ubroker/pkg/ubroker";
+
+message Message {
+    bytes body = 1;
+}
+
+message Delivery {
+    Message message = 1;
+    int32 id = 2;
+}
