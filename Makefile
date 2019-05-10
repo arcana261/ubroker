@@ -25,19 +25,10 @@ ubroker: $(SRCS) pkg/ubroker/ubroker.pb.go | dependencies generate ##‌ Compile
 
 generate: pkg/ubroker/ubroker.pb.go
 
-pkg/ubroker/ubroker.pb.go: api/ubroker.proto
-	$(PROTOC) $(PROTOC_OPTIONS) --go_out=plugins=grpc:$(GOPATH)/src $<
+pkg/ubroker/ubroker.pb.go: api/ubroker.proto | .pre-check-go
+	$(PROTOC) $(PROTOC_OPTIONS) --go_out=plugins=grpc:$(GOPATH)/src api/ubroker.proto
 
 .pre-check-go:
-ifeq (,$(shell which go))
-	$(error golang is required, please install golang and re-run command, see more at https://grpc.io/docs/quickstart/go.html)
-endif
-ifeq (,$(shell which protoc))
-	$(error protoc is required, please install protoc and re-run command, see more at https://grpc.io/docs/quickstart/go.html)
-endif
-ifeq (NONE,$(GOPATH))
-	$(error GOPATH environment variable must be set, refer to golang installation manual)
-endif
 	go get -v github.com/golang/protobuf/protoc-gen-go
 	go get -v github.com/vektra/mockery/.../
 
