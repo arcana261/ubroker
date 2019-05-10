@@ -15,12 +15,12 @@ benchmark: dev-dependencies | generate ## Run benchmarks
 dependencies: | generate ##‌ Download dependencies
 	go get -v ./...
 
-dev-dependencies: dependencies ##‌ Download development dependencies
+dev-dependencies: dependencies | generate ##‌ Download development dependencies
 	go get -v github.com/stretchr/testify/suite
 	go get -v github.com/stretchr/testify/assert
 	go get -v github.com/phayes/freeport
 
-ubroker: $(SRCS) | dependencies generate ##‌ Compile us
+ubroker: $(SRCS) pkg/ubroker/ubroker.pb.go | dependencies generate ##‌ Compile us
 	go build -o ubroker ./cmd/ubroker
 
 generate: pkg/ubroker/ubroker.pb.go
