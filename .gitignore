@@ -1,2 +1,2 @@
 /ubroker
-*.test
+*.pb.go

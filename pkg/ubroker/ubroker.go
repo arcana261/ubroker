@@ -9,7 +9,7 @@ import (
 // Broker interface defines functionalities of a
 // message broker system.
 //
-// We require our message broker to timeout and requeue
+// we require our message broker to timeout and requeue
 // unacknowledged messages automatically. We also require
 // that implementations should be thread-safe.
 type Broker interface {
@@ -27,13 +27,13 @@ type Broker interface {
 	// messages to consumers.
 	// We require following:
 	//
-	// 1. Resulting read-only channel is unique (it does
+	// 1. Resulting read-only channel is unique (it doesn
 	//    not change each time you call it)
 	// 2. If `ctx` is canceled or timed out, `ctx.Err()` is
 	//    returned
 	// 3. If broker is closed, `ErrClosed` is returned
 	// 4. should be thread-safe
-	Delivery(ctx context.Context) (<-chan Delivery, error)
+	Delivery(ctx context.Context) (<-chan *Delivery, error)
 
 	// Acknowledge is called by clients to declare that
 	// specified message id has been successfuly processed
@@ -48,7 +48,7 @@ type Broker interface {
 	//    returned
 	// 5. If broker is closed, `ErrClosed` is returned
 	// 6. should be thread-safe
-	Acknowledge(ctx context.Context, id int) error
+	Acknowledge(ctx context.Context, id int32) error
 
 	// ReQueue is called by clients to declare that
 	// specified message id should be put back in
@@ -62,7 +62,7 @@ type Broker interface {
 	//    returned
 	// 5. If broker is closed, `ErrClosed` is returned
 	// 6. should be thread-safe
-	ReQueue(ctx context.Context, id int) error
+	ReQueue(ctx context.Context, id int32) error
 
 	// Publish is used to enqueue a new message to broker
 	// We demand following:
@@ -71,7 +71,7 @@ type Broker interface {
 	//    returned
 	// 2. If broker is closed, `ErrClosed` is returned
 	// 3. should be thread-safe
-	Publish(ctx context.Context, message Message) error
+	Publish(ctx context.Context, message *Message) error
 }
 
 // HTTPServer defines an HTTP‌ API‌ server provider
@@ -80,20 +80,4 @@ type HTTPServer interface {
 	http.Handler
 
 	Run() error
-}
-
-// Message encapsulates a queued message
-type Message struct {
-	// Body is an abitrary client-defined string
-	Body string `json:"body"`
-}
-
-// Delivery encapsulates a message fetched
-// from queue
-type Delivery struct {
-	// Message is the message fetched from queue
-	Message Message `json:"message"`
-
-	// ID
-	ID int `json:"id"`
 }

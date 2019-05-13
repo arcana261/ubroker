@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/gorilla/mux"
 
 	"github.com/sirupsen/logrus"
@@ -37,7 +37,7 @@ func init() {
 type httpServer struct {
 	broker   ubroker.Broker
 	router   *mux.Router
-	delivery <-chan ubroker.Delivery
+	delivery <-chan *ubroker.Delivery
 	endpoint string
 	server   *http.Server
 	mutex    sync.Mutex
@@ -126,14 +126,8 @@ func (s *httpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 }
 
 func (s *httpServer) handlePublish(writer http.ResponseWriter, request *http.Request) {
-	data, err := ioutil.ReadAll(request.Body)
-	if err != nil {
-		s.handleError(writer, request, err)
-		return
-	}
-
 	var msg ubroker.Message
-	err = json.Unmarshal(data, &msg)
+	err := jsonpb.Unmarshal(request.Body, &msg)
 	if err != nil {
 		s.handleError(writer, request, err)
 	}
@@ -141,7 +135,7 @@ func (s *httpServer) handlePublish(writer http.ResponseWriter, request *http.Req
 	ctx, cancel := s.makeContext(request)
 	defer cancel()
 
-	err = s.broker.Publish(ctx, msg)
+	err = s.broker.Publish(ctx, &msg)
 	if err != nil {
 		s.handleError(writer, request, err)
 	}
@@ -166,7 +160,7 @@ func (s *httpServer) handleAcknowledge(writer http.ResponseWriter, request *http
 	ctx, cancel := s.makeContext(request)
 	defer cancel()
 
-	err = s.broker.Acknowledge(ctx, id)
+	err = s.broker.Acknowledge(ctx, int32(id))
 	if err != nil {
 		s.handleError(writer, request, err)
 		return
@@ -192,7 +186,7 @@ func (s *httpServer) handleReQueue(writer http.ResponseWriter, request *http.Req
 	ctx, cancel := s.makeContext(request)
 	defer cancel()
 
-	err = s.broker.ReQueue(ctx, id)
+	err = s.broker.ReQueue(ctx, int32(id))
 	if err != nil {
 		s.handleError(writer, request, err)
 		return
