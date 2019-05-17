@@ -9,20 +9,18 @@ import (
 )
 
 type core struct {
-	ttl               time.Duration
-	deliveryChannel   chan ubroker.Delivery
-	publishChannel    chan publishRequest
-	requeueReqChannel chan requeueRequest
-	ackReqChannel     chan ackRequest
-	closed            chan struct{}
-	closing           chan struct{}
-	requestProcGroup  sync.WaitGroup
-	queueProcGroup    sync.WaitGroup
+	ttl                 time.Duration
+	deliveryChannel     chan ubroker.Delivery
+	publishChannel      chan publishRequest
+	requeueReqChannel   chan requeueRequest
+	ackReqChannel       chan ackRequest
+	closed              chan struct{}
+	procGroup           sync.WaitGroup
 	requestHandlingLock sync.Mutex // checking closing channel and add to requestProcGroup should be atomic)
 }
 
 type publishRequest struct {
-	msg ubroker.Message
+	msg       ubroker.Message
 	resultErr chan error
 }
 
@@ -42,8 +40,7 @@ type pendingDelivery struct {
 }
 
 func (c *core) waitForAck(pd pendingDelivery) {
-	defer c.queueProcGroup.Done()
-
+	defer c.procGroup.Done()
 
 	select {
 	case <-pd.ackChannel:
@@ -55,7 +52,6 @@ func (c *core) waitForAck(pd pendingDelivery) {
 			id:        pd.delivery.ID,
 			resultErr: make(chan error, 1),
 		}
-
 		select {
 		case c.requeueReqChannel <- r:
 		case <-c.closed:
@@ -67,7 +63,6 @@ func (c *core) waitForAck(pd pendingDelivery) {
 	}
 }
 
-
 func first(q []ubroker.Delivery) ubroker.Delivery {
 	if len(q) == 0 {
 		return ubroker.Delivery{}
@@ -77,7 +72,7 @@ func first(q []ubroker.Delivery) ubroker.Delivery {
 
 func (c *core) startQueueManager() {
 
-	c.queueProcGroup.Add(1)
+	c.procGroup.Add(1)
 	var (
 		queue           []ubroker.Delivery
 		deliveryChannel chan ubroker.Delivery
@@ -91,7 +86,7 @@ func (c *core) startQueueManager() {
 	}
 
 	go func() {
-		defer c.queueProcGroup.Done()
+		defer c.procGroup.Done()
 
 		for {
 			select {
@@ -107,18 +102,17 @@ func (c *core) startQueueManager() {
 					deliveryChannel = c.deliveryChannel
 				}
 				queue = append(queue, deliveryMessage)
-				//publishMassage.resultErr <- nil
-				close(publishMassage.resultErr)
+				publishMassage.resultErr <- nil
 
 			case deliveryChannel <- first(queue): // front of queue delivered
 				// create goroutine to wait for ack and add to pending map
 				deliveredItem := first(queue)
 				pd := pendingDelivery{
-					delivery: deliveredItem,
+					delivery:   deliveredItem,
 					ackChannel: make(chan struct{}, 1),
 				}
 				ackPendingDeliveries[deliveredItem.ID] = pd
-				c.queueProcGroup.Add(1)
+				c.procGroup.Add(1)
 				go c.waitForAck(pd)
 
 				//remove front from queue
@@ -179,26 +173,25 @@ func New(ttl time.Duration) ubroker.Broker {
 		requeueReqChannel: make(chan requeueRequest),
 		ackReqChannel:     make(chan ackRequest),
 		closed:            make(chan struct{}),
-		closing:           make(chan struct{}),
 	}
 	c.startQueueManager()
 	return c
 }
 
-func (c *core) startRequestHandling() error{
+func (c *core) startRequestHandling() error {
 	c.requestHandlingLock.Lock()
 	defer c.requestHandlingLock.Unlock()
 	if c.isClosedBefore() {
 		return ubroker.ErrClosed
 	}
-	c.requestProcGroup.Add(1)
+	c.procGroup.Add(1)
 	return nil
 }
 
 // is currently closing or closed before
-func (c *core) isClosedBefore() bool{
+func (c *core) isClosedBefore() bool {
 	select {
-	case <-c.closing:
+	case <-c.closed:
 		return true
 	default:
 	}
@@ -207,22 +200,22 @@ func (c *core) isClosedBefore() bool{
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 	select {
-	case <-c.closing:
+	case <-c.closed:
 		return nil, ubroker.ErrClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	c.requestProcGroup.Add(1)
-	defer c.requestProcGroup.Done()
+	c.procGroup.Add(1)
+	defer c.procGroup.Done()
 	return c.deliveryChannel, nil
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	if err:=c.startRequestHandling(); err!=nil{
+	if err := c.startRequestHandling(); err != nil {
 		return err
 	}
-	defer c.requestProcGroup.Done()
+	defer c.procGroup.Done()
 	r := ackRequest{
 		id:        id,
 		resultErr: make(chan error, 1),
@@ -236,15 +229,19 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 			return ctx.Err()
 		case err := <-r.resultErr:
 			return err
+		case <-c.closed:
+			return ubroker.ErrClosed
 		}
+	case <-c.closed:
+		return ubroker.ErrClosed
 	}
 }
 
 func (c *core) ReQueue(ctx context.Context, id int) error {
-	if err:=c.startRequestHandling(); err!=nil{
+	if err := c.startRequestHandling(); err != nil {
 		return err
 	}
-	defer c.requestProcGroup.Done()
+	defer c.procGroup.Done()
 	r := requeueRequest{
 		id:        id,
 		resultErr: make(chan error, 1),
@@ -254,22 +251,26 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		return ctx.Err()
 	case c.requeueReqChannel <- r:
 		select {
+		case <-c.closed:
+			return ubroker.ErrClosed
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-r.resultErr:
 			return err
 		}
+	case <-c.closed:
+		return ubroker.ErrClosed
 	}
 }
 
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	if err:=c.startRequestHandling(); err!=nil{
+	if err := c.startRequestHandling(); err != nil {
 		return err
 	}
-	defer c.requestProcGroup.Done()
+	defer c.procGroup.Done()
 
 	pr := publishRequest{
-		msg: message,
+		msg:       message,
 		resultErr: make(chan error, 1),
 	}
 
@@ -278,8 +279,6 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 		select {
 		case <-pr.resultErr:
 			return nil
-		case <-c.closed:
-			return ubroker.ErrClosed
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -294,16 +293,12 @@ func (c *core) Close() error {
 
 	// prevent race condition between requestProcGroup.Wait and requestProcGroup.Add
 	c.requestHandlingLock.Lock()
-	if !c.isClosedBefore(){
-		close(c.closing)
+	if !c.isClosedBefore() {
+		close(c.closed)
 	}
 	c.requestHandlingLock.Unlock()
 
-	// in closing phase we shut down request handling and let them all finish
-	c.requestProcGroup.Wait()
-	close(c.closed)
-	// after that we wait for queue manager to end his work and then close related channels
-	c.queueProcGroup.Wait()
+	c.procGroup.Wait()
 	close(c.requeueReqChannel)
 	close(c.ackReqChannel)
 	close(c.deliveryChannel)
