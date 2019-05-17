@@ -5,303 +5,338 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/erfan-mehraban/ubroker/pkg/ubroker"
 )
-
-type core struct {
-	ttl                 time.Duration
-	deliveryChannel     chan ubroker.Delivery
-	publishChannel      chan publishRequest
-	requeueReqChannel   chan requeueRequest
-	ackReqChannel       chan ackRequest
-	closed              chan struct{}
-	procGroup           sync.WaitGroup
-	requestHandlingLock sync.Mutex // checking closing channel and add to requestProcGroup should be atomic)
-}
-
-type publishRequest struct {
-	msg       ubroker.Message
-	resultErr chan error
-}
-
-type ackRequest struct {
-	id        int
-	resultErr chan error
-}
-
-type requeueRequest struct {
-	id        int
-	resultErr chan error
-}
-
-type pendingDelivery struct {
-	delivery   ubroker.Delivery
-	ackChannel chan struct{}
-}
-
-func (c *core) waitForAck(pd pendingDelivery) {
-	defer c.procGroup.Done()
-
-	select {
-	case <-pd.ackChannel:
-		// if ack come from user, queue manager close this channel
-		return
-
-	case <-time.After(c.ttl): // timeout
-		r := requeueRequest{
-			id:        pd.delivery.ID,
-			resultErr: make(chan error, 1),
-		}
-		select {
-		case c.requeueReqChannel <- r:
-		case <-c.closed:
-			return
-		}
-
-	case <-c.closed:
-		return
-	}
-}
-
-func first(q []ubroker.Delivery) ubroker.Delivery {
-	if len(q) == 0 {
-		return ubroker.Delivery{}
-	}
-	return q[0]
-}
-
-func (c *core) startQueueManager() {
-
-	c.procGroup.Add(1)
-	var (
-		queue           []ubroker.Delivery
-		deliveryChannel chan ubroker.Delivery
-		lastID          int
-	)
-	ackPendingDeliveries := make(map[int]pendingDelivery)
-
-	newID := func() int {
-		lastID++
-		return lastID
-	}
-
-	go func() {
-		defer c.procGroup.Done()
-
-		for {
-			select {
-
-			case publishMassage := <-c.publishChannel: // new message arrived
-				msg := publishMassage.msg
-				deliveryMessage := ubroker.Delivery{
-					ID:      newID(),
-					Message: msg,
-				}
-				if deliveryChannel == nil {
-					//open deliveryChannel because queue isn't empty anymore
-					deliveryChannel = c.deliveryChannel
-				}
-				queue = append(queue, deliveryMessage)
-				publishMassage.resultErr <- nil
-
-			case deliveryChannel <- first(queue): // front of queue delivered
-				// create goroutine to wait for ack and add to pending map
-				deliveredItem := first(queue)
-				pd := pendingDelivery{
-					delivery:   deliveredItem,
-					ackChannel: make(chan struct{}, 1),
-				}
-				ackPendingDeliveries[deliveredItem.ID] = pd
-				c.procGroup.Add(1)
-				go c.waitForAck(pd)
-
-				//remove front from queue
-				if len(queue) > 1 {
-					queue = queue[1:]
-				} else { // there isn't any item ready to send in deliveryChannel
-					queue = nil
-					deliveryChannel = nil
-				}
-
-			case ack := <-c.ackReqChannel:
-				pd, ok := ackPendingDeliveries[ack.id]
-				if !ok {
-					ack.resultErr <- ubroker.ErrInvalidID
-				} else {
-					close(pd.ackChannel) // tell relevant waitForAck goroutine to not wait anymore
-					delete(ackPendingDeliveries, ack.id)
-					ack.resultErr <- nil
-				}
-
-			case req := <-c.requeueReqChannel:
-				pd, ok := ackPendingDeliveries[req.id]
-				if !ok {
-					req.resultErr <- ubroker.ErrInvalidID
-				} else {
-					close(pd.ackChannel)
-					delete(ackPendingDeliveries, req.id)
-
-					if deliveryChannel == nil {
-						//open deliveryChannel because queue isn't empty anymore
-						deliveryChannel = c.deliveryChannel
-					}
-
-					pd.delivery.ID = newID()
-					// append delivery to queue is wrong according to issue #10 on github
-					// correct: queue = append([]ubroker.Delivery{rd}, queue...)
-					queue = append(queue, pd.delivery)
-
-					req.resultErr <- nil
-				}
-
-			case <-c.closed:
-				return
-			}
-		}
-	}()
-}
 
 // New creates a new instance of ubroker.Broker
 // with given `ttl`. `ttl` determines time in which
 // we requeue an unacknowledged/unrequeued message
 // automatically.
 func New(ttl time.Duration) ubroker.Broker {
-	c := &core{
-		ttl:               ttl,
-		deliveryChannel:   make(chan ubroker.Delivery),
-		publishChannel:    make(chan publishRequest),
-		requeueReqChannel: make(chan requeueRequest),
-		ackReqChannel:     make(chan ackRequest),
-		closed:            make(chan struct{}),
+	broker := &core{
+		ttl:             ttl,
+		requests:        make(chan interface{}),
+		deliveryChannel: make(chan *ubroker.Delivery),
+		closed:          make(chan bool, 1),
+		closing:         make(chan bool, 1),
+		pending:         make(map[int32]*ubroker.Message),
+		messages:        []*ubroker.Delivery{{}},
 	}
-	c.startQueueManager()
-	return c
+
+	broker.wg.Add(1)
+	go broker.startDelivery()
+
+	return broker
 }
 
-func (c *core) startRequestHandling() error {
-	c.requestHandlingLock.Lock()
-	defer c.requestHandlingLock.Unlock()
-	if c.isClosedBefore() {
-		return ubroker.ErrClosed
-	}
-	c.procGroup.Add(1)
-	return nil
+type core struct {
+	nextID int32
+	ttl    time.Duration
+
+	mutex   sync.Mutex
+	working sync.WaitGroup
+	wg      sync.WaitGroup
+
+	requests        chan interface{}
+	deliveryChannel chan *ubroker.Delivery
+	closed          chan bool
+	closing         chan bool
+	pending         map[int32]*ubroker.Message
+	messages        []*ubroker.Delivery
+	channel         chan *ubroker.Delivery
 }
 
-// is currently closing or closed before
-func (c *core) isClosedBefore() bool {
-	select {
-	case <-c.closed:
-		return true
-	default:
-	}
-	return false
+type acknowledgeRequest struct {
+	id       int32
+	response chan acknowledgeResponse
 }
 
-func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
-	select {
-	case <-c.closed:
-		return nil, ubroker.ErrClosed
-	case <-ctx.Done():
+type acknowledgeResponse struct {
+	id  int32
+	err error
+}
+
+type requeueRequest struct {
+	id       int32
+	response chan requeueResponse
+}
+
+type requeueResponse struct {
+	id  int32
+	err error
+}
+
+type publishRequest struct {
+	message  *ubroker.Message
+	response chan publishResponse
+}
+
+type publishResponse struct {
+	err error
+}
+
+func (c *core) Delivery(ctx context.Context) (<-chan *ubroker.Delivery, error) {
+	if isCanceledContext(ctx) {
 		return nil, ctx.Err()
-	default:
 	}
-	c.procGroup.Add(1)
-	defer c.procGroup.Done()
+
+	if !c.startWorking() {
+		return nil, ubroker.ErrClosed
+	}
+	defer c.working.Done()
+
 	return c.deliveryChannel, nil
 }
 
-func (c *core) Acknowledge(ctx context.Context, id int) error {
-	if err := c.startRequestHandling(); err != nil {
-		return err
+func (c *core) Acknowledge(ctx context.Context, id int32) error {
+	if isCanceledContext(ctx) {
+		return ctx.Err()
 	}
-	defer c.procGroup.Done()
-	r := ackRequest{
-		id:        id,
-		resultErr: make(chan error, 1),
+
+	if !c.startWorking() {
+		return ubroker.ErrClosed
 	}
+	defer c.working.Done()
+
+	request := &acknowledgeRequest{
+		id:       id,
+		response: make(chan acknowledgeResponse, 1),
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case c.ackReqChannel <- r:
+	case c.requests <- request:
 		select {
+		case response := <-request.response:
+			return response.err
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-r.resultErr:
-			return err
-		case <-c.closed:
-			return ubroker.ErrClosed
 		}
-	case <-c.closed:
-		return ubroker.ErrClosed
 	}
 }
 
-func (c *core) ReQueue(ctx context.Context, id int) error {
-	if err := c.startRequestHandling(); err != nil {
-		return err
+func (c *core) ReQueue(ctx context.Context, id int32) error {
+	if isCanceledContext(ctx) {
+		return ctx.Err()
 	}
-	defer c.procGroup.Done()
-	r := requeueRequest{
-		id:        id,
-		resultErr: make(chan error, 1),
+
+	if !c.startWorking() {
+		return ubroker.ErrClosed
 	}
+	defer c.working.Done()
+
+	request := &requeueRequest{
+		id:       id,
+		response: make(chan requeueResponse, 1),
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case c.requeueReqChannel <- r:
+	case c.requests <- request:
 		select {
-		case <-c.closed:
-			return ubroker.ErrClosed
+		case response := <-request.response:
+			return response.err
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-r.resultErr:
-			return err
 		}
-	case <-c.closed:
-		return ubroker.ErrClosed
 	}
 }
 
-func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	if err := c.startRequestHandling(); err != nil {
-		return err
+func (c *core) Publish(ctx context.Context, message *ubroker.Message) error {
+	if isCanceledContext(ctx) {
+		return ctx.Err()
 	}
-	defer c.procGroup.Done()
 
-	pr := publishRequest{
-		msg:       message,
-		resultErr: make(chan error, 1),
+	if !c.startWorking() {
+		return ubroker.ErrClosed
+	}
+	defer c.working.Done()
+
+	request := &publishRequest{
+		message:  message,
+		response: make(chan publishResponse, 1),
 	}
 
 	select {
-	case c.publishChannel <- pr:
-		select {
-		case <-pr.resultErr:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	case <-c.closed:
-		return ubroker.ErrClosed
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-c.closed:
+		return ubroker.ErrClosed
+	case c.requests <- request:
+		return nil
 	}
 }
 
 func (c *core) Close() error {
-
-	// prevent race condition between requestProcGroup.Wait and requestProcGroup.Add
-	c.requestHandlingLock.Lock()
-	if !c.isClosedBefore() {
-		close(c.closed)
+	if !c.startClosing() {
+		return errors.New("can not close channel, closing in progress")
 	}
-	c.requestHandlingLock.Unlock()
-
-	c.procGroup.Wait()
-	close(c.requeueReqChannel)
-	close(c.ackReqChannel)
+	c.working.Wait()
+	close(c.closed)
+	c.wg.Wait()
 	close(c.deliveryChannel)
-	close(c.publishChannel)
+
 	return nil
+}
+
+func (c *core) startDelivery() {
+	defer c.wg.Done()
+	for {
+		select {
+		case <-c.closed:
+			return
+
+		case request := <-c.requests:
+			if isAcknowledgeRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*acknowledgeRequest)
+				req.response <- c.handleAcknowledge(req)
+			} else if isRequeueRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*requeueRequest)
+				req.response <- c.handleRequeue(req)
+			} else if isPublishRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*publishRequest)
+				req.response <- c.handlePublish(req)
+			} else {
+				panic(errors.New("UNKNOWN REQUEST"))
+			}
+
+		case c.channel <- c.messages[0]:
+			if c.channel != nil {
+				c.pending[c.messages[0].Id] = c.messages[0].Message
+				c.wg.Add(1)
+				go c.snooze(c.messages[0].Id)
+
+				c.messages = c.messages[1:]
+				if len(c.messages) == 0 {
+					c.channel = nil
+					c.messages = []*ubroker.Delivery{{}}
+				}
+			}
+		}
+	}
+}
+
+func (c *core) startWorking() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	select {
+	case <-c.closing:
+		return false
+	default:
+		c.working.Add(1)
+		return true
+	}
+}
+
+func (c *core) startClosing() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	select {
+	case <-c.closing:
+		return false
+	default:
+		close(c.closing)
+		return true
+	}
+}
+
+func isCanceledContext(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+func isAcknowledgeRequest(request interface{}) bool {
+	_, ok := request.(*acknowledgeRequest)
+	return ok
+}
+
+func isRequeueRequest(request interface{}) bool {
+	_, ok := request.(*requeueRequest)
+	return ok
+}
+
+func isPublishRequest(request interface{}) bool {
+	_, ok := request.(*publishRequest)
+	return ok
+}
+
+func (c *core) handleAcknowledge(request *acknowledgeRequest) acknowledgeResponse {
+	defer c.wg.Done()
+	_, ok := c.pending[request.id]
+	if !ok {
+		return acknowledgeResponse{id: request.id, err: ubroker.ErrInvalidID}
+	}
+	delete(c.pending, request.id)
+	return acknowledgeResponse{id: request.id, err: nil}
+}
+
+func (c *core) handleRequeue(request *requeueRequest) requeueResponse {
+	defer c.wg.Done()
+	message, ok := c.pending[request.id]
+	if !ok {
+		return requeueResponse{id: request.id, err: ubroker.ErrInvalidID}
+	}
+	delete(c.pending, request.id)
+	c.wg.Add(1)
+	c.handlePublish(&publishRequest{
+		message:  message,
+		response: make(chan publishResponse, 1),
+	})
+	return requeueResponse{id: request.id, err: nil}
+}
+
+func (c *core) handlePublish(request *publishRequest) publishResponse {
+	defer c.wg.Done()
+
+	if c.channel == nil {
+		c.messages = []*ubroker.Delivery{}
+		c.channel = c.deliveryChannel
+	}
+
+	id := c.nextID
+	c.nextID++
+	newDelivery := ubroker.Delivery{
+		Id:      id,
+		Message: request.message,
+	}
+
+	c.messages = append(c.messages, &newDelivery)
+
+	return publishResponse{err: nil}
+}
+
+func (c *core) snooze(id int32) {
+	defer c.wg.Done()
+	ticker := time.NewTicker(c.ttl)
+	defer ticker.Stop()
+
+	select {
+	case <-c.closed:
+		return
+
+	case <-ticker.C:
+		request := &requeueRequest{
+			id:       id,
+			response: make(chan requeueResponse, 1),
+		}
+		select {
+		case <-c.closed:
+			return
+
+		case c.requests <- request:
+		}
+	}
 }
