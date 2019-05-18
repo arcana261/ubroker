@@ -32,5 +32,6 @@ pkg/ubroker/ubroker.pb.go: api/ubroker.proto | .pre-check-go
 	go get -v github.com/golang/protobuf/protoc-gen-go
 	go get -v github.com/vektra/mockery/.../
 
+GOPATH ?= $(shell go env GOPATH)
 PROTOC ?= protoc
 PROTOC_OPTIONS ?=
