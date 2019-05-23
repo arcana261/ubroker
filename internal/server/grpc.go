@@ -1,12 +1,14 @@
+
 package server
 
 import (
 	"context"
+	"io"
+
 	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"io"
 )
 
 type grpcServicer struct {
@@ -18,6 +20,7 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 		broker: broker,
 	}
 }
+
 
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	delivery, err := s.broker.Delivery(stream.Context())
