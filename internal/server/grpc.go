@@ -81,7 +81,7 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 
 	deliveryChannel, err := s.broker.Delivery(ctx)
 	if err != nil {
-		return err
+		return status.Error(codes.Unavailable, "Unavailable")
 	}
 
 	for {
@@ -93,9 +93,9 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 		select {
 		case delivery := <-deliveryChannel:
 			if delivery != nil{
-				return status.Error(codes.Unavailable, "Unavailable")
-			}else{
 				stream.Send(delivery)
+			}else{
+				return status.Error(codes.Unavailable, "Unavailable")
 			}
 
 		case <-ctx.Done():
