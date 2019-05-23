@@ -19,6 +19,8 @@ func getError(msg error) error {
 		return nil
 	case ubroker.ErrClosed:
 		return status.Error(codes.Unavailable, "Broker is closed")
+	case ubroker.ErrInvalidID:
+		return status.Error(codes.InvalidArgument, "Invalid Id")
 	default:
 		return status.Error(codes.Unknown, "Unknown Error")
 	}
