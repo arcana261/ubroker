@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/mahtabfarrokh/ubroker/internal/broker"
+	"github.com/mahtabfarrokh/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"
@@ -30,9 +30,7 @@ func TestCoreBrokerTestSuite(t *testing.T) {
 func BenchmarkPublish(b *testing.B) {
 	broker := broker.New(1 * time.Minute)
 	s := assert.New(b)
-
 	b.ResetTimer()
-
 	for i := 0; i < b.N; i++ {
 		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
 	}
@@ -161,6 +159,7 @@ func (s *CoreBrokerTestSuite) TestMessageShouldNotBeQueueablePreemptively() {
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	for id := -100; id <= 100; id++ {
+
 		s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), id))
 	}
 }
@@ -193,11 +192,14 @@ func (s *CoreBrokerTestSuite) TestMultipleDeliveriesShouldBeAcknowledgeableIndep
 }
 
 func (s *CoreBrokerTestSuite) TestAcknowledgedMessageShouldNotAppearInDelivery() {
+
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	delivery := s.getDelivery(context.Background())
+
 	msg := <-delivery
 	s.Nil(s.broker.Acknowledge(context.Background(), msg.ID))
+
 	s.assertEmpty(delivery)
 }
 
@@ -214,8 +216,11 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldBeReQueueable() {
 
 func (s *CoreBrokerTestSuite) TestDeliveryShouldNotBeReQueueableTwice() {
 	s.prepareTest(1 * time.Second)
+
 	s.publish("hello")
+
 	msg := <-s.getDelivery(context.Background())
+
 	s.Nil(s.broker.ReQueue(context.Background(), msg.ID))
 	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg.ID))
 }
@@ -292,9 +297,14 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldFailOnClosedBroker() {
 
 func (s *CoreBrokerTestSuite) TestCloseShouldCloseDeliveryChannel() {
 	s.prepareTest(1 * time.Second)
+	fmt.Println(context.Background())
 	delivery := s.getDelivery(context.Background())
+	fmt.Println(delivery)
 	s.Nil(s.broker.Close())
 	_, ok := <-delivery
+	fmt.Println(s)
+
+	fmt.Println(ok)
 	s.False(ok)
 }
 

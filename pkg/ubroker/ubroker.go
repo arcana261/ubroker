@@ -93,7 +93,6 @@ type Message struct {
 type Delivery struct {
 	// Message is the message fetched from queue
 	Message Message `json:"message"`
-
 	// ID
 	ID int `json:"id"`
 }

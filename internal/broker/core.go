@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/mahtabfarrokh/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 )
 
@@ -13,212 +13,217 @@ import (
 // with given `ttl`. `ttl` determines time in which
 // we requeue an unacknowledged/unrequeued message
 // automatically.
+
 func New(ttl time.Duration) ubroker.Broker {
-	temp := &core{
-		closed:          false,
-		brokerChan:      make(chan ubroker.Delivery, 1000),
-		closedChan:      make(chan bool, 5000),
-		publishedQueue:  []item{},
-		receivedId:      []int{},
-		receivedAck:     []int{},
-		receivedRequeue: []int{},
-		lastIdValue:     -1,
-		deliveryStarted: false,
-		wg:              sync.WaitGroup{},
-		ttl:             ttl,
+
+	c := &core{
+		delFlag:        false,
+		isClosed:       false,
+		delChan:        make(chan ubroker.Delivery, 100),
+		mainQ:          make([]messageType, 0),
+		lastID:         0,
+		ackedMessageID: make([]int, 0),
+		ttl:            ttl,
 	}
-
-	return temp
+	return c
 }
 
-type item struct {
-	Message            ubroker.Message
-	ID                 int
-	receivedAckChannel chan int
-}
 type core struct {
-	closed          bool
-	brokerChan      chan ubroker.Delivery
-	closedChan      chan bool
-	publishedQueue  []item
-	receivedId      []int
-	lastIdValue     int
-	receivedAck     []int
-	receivedRequeue []int
-	wg              sync.WaitGroup
-	mut             sync.Mutex
-	deliveryStarted bool
-	ttl             time.Duration
+	sync.Mutex
+	isClosed       bool
+	delChan        chan ubroker.Delivery
+	lastID         int
+	mainQ          []messageType
+	ttl            time.Duration
+	delFlag        bool
+	ackedMessageID []int
 }
 
-func contextProblem(ctx context.Context) bool {
-	if ctx.Err() == context.Canceled {
-		return true
-	}
-	if ctx.Err() == context.DeadlineExceeded {
-		return true
-	}
-	return false
+type messageType struct {
+	msg     ubroker.Delivery
+	ttlTime time.Time
 }
+
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
 
-	if contextProblem(ctx) {
+	switch ctx.Err() {
+	case context.Canceled:
+		return nil, ctx.Err()
+	case context.DeadlineExceeded:
 		return nil, ctx.Err()
 	}
-	if c.closed {
+	c.Lock()
+	defer c.Unlock()
+	if c.isClosed == true {
 		return nil, ubroker.ErrClosed
 	}
-	c.mut.Lock()
-	c.deliveryStarted = true
-	c.mut.Unlock()
-	return c.brokerChan, nil
-	//return nil, errors.Wrap(ubroker.ErrUnimplemented, "method Delivery is not implemented")
+	c.delFlag = true
+
+	return c.delChan, nil
 }
 
 func (c *core) Acknowledge(ctx context.Context, id int) error {
-	c.mut.Lock()
-	if c.closed {
-		c.mut.Unlock()
-		return ubroker.ErrClosed
-	}
-	if contextProblem(ctx) {
-		c.mut.Unlock()
+
+	switch ctx.Err() {
+	case context.Canceled:
+		return ctx.Err()
+	case context.DeadlineExceeded:
 		return ctx.Err()
 	}
-	temp := false
-
-	if c.deliveryStarted {
-		temp = true
-	}
-	for _, element := range c.receivedAck {
-		if element == id {
-			temp = false
-		}
-	}
-
-	if !temp {
-		c.mut.Unlock()
-		return errors.Wrap(ubroker.ErrInvalidID, "invalid Id")
-	}
-	if c.closed {
-		c.mut.Unlock()
-
+	c.Lock()
+	defer c.Unlock()
+	if c.isClosed == true {
 		return ubroker.ErrClosed
 	}
-	c.receivedAck = append(c.receivedAck, id)
-	for i, element := range c.publishedQueue {
-		if element.ID == id {
-			c.publishedQueue[i].receivedAckChannel <- id
-			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
+
+	// check delivery done
+	if c.delFlag == false {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	}
+
+	// published
+	var indexID = -1
+	for index, message := range c.mainQ {
+		if message.msg.ID == id {
+			indexID = index
 			break
 		}
 	}
-	c.mut.Unlock()
+
+	// acked befor
+	var ackIndex = -1
+	for index, ids := range c.ackedMessageID {
+		if ids == id {
+			ackIndex = index
+			break
+		}
+	}
+
+	if indexID == -1 {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	}
+
+	if ackIndex != -1 {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	}
+	// checked ttl time
+	if time.Now().Sub(c.mainQ[indexID].ttlTime) > c.ttl {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	} else {
+		// acked
+		c.ackedMessageID = append(c.ackedMessageID, id)
+		return nil
+	}
+
+	return nil
+}
+
+func (c *core) ReQueue(ctx context.Context, id int) error {
 
 	//c.wg.Done()
-	return nil
-}
-func (c *core) DoingReQueue(ctx context.Context, id int) {
-	for i, element := range c.publishedQueue {
-		if element.ID == id {
-			c.receivedRequeue = append(c.receivedRequeue, id)
-			c.receivedAck = append(c.receivedAck, id)
-			c.lastIdValue += 1
-			c.receivedId = append(c.receivedId, c.lastIdValue)
-			v := ubroker.Delivery{Message: element.Message, ID: c.lastIdValue}
-			v2 := item{Message: element.Message, ID: c.lastIdValue, receivedAckChannel: make(chan int, 10)}
-			//fmt.Println(len(c.publishedQueue), id, i)
-			c.publishedQueue = append(c.publishedQueue[:i], c.publishedQueue[i+1:]...)
-			c.publishedQueue = append(c.publishedQueue, v2)
-			c.brokerChan <- v
-			c.mut.Unlock()
-			go c.HandelingTTL(ctx, v2)
+	//defer c.wg.Done()
+
+	switch ctx.Err() {
+	case context.Canceled:
+		return ctx.Err()
+	case context.DeadlineExceeded:
+		return ctx.Err()
+	}
+	c.Lock()
+	defer c.Unlock()
+	if c.isClosed == true {
+		return ubroker.ErrClosed
+	}
+
+	//check delivery
+	if c.delFlag == false {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	}
+
+	// published?
+	var indexID = -1
+	for index, message := range c.mainQ {
+		if message.msg.ID == id {
+			indexID = index
 			break
 		}
-
 	}
 
-}
-func (c *core) HandelingTTL(ctx context.Context, element item) {
-	select {
-	case <-time.After(c.ttl):
-		c.mut.Lock()
-		c.DoingReQueue(ctx, element.ID)
-		return
-	case <-element.receivedAckChannel:
-		return
-	case <-c.closedChan:
-		return
+	if indexID == -1 {
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
 	}
-}
-func (c *core) ReQueue(ctx context.Context, id int) error {
-	c.mut.Lock()
-	if c.closed {
-		c.mut.Unlock()
-		return ubroker.ErrClosed
-	}
-	if contextProblem(ctx) {
-		c.mut.Unlock()
-		return ctx.Err()
-	}
-	temp := false
-	if c.deliveryStarted {
-		temp = true
-	}
-	for _, element := range c.receivedRequeue {
-		if element == id {
-			temp = false
-		}
-	}
-	for _, element := range c.receivedAck {
-		if element == id {
-			temp = false
-		}
-	}
-	if !temp {
-		c.mut.Unlock()
+	// check ttl time
+	if time.Now().Sub(c.mainQ[indexID].ttlTime) > c.ttl {
+		c.doReQ(c.mainQ[indexID])
+		c.mainQ = append(c.mainQ[:indexID], c.mainQ[indexID+1:]...)
+		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	} else {
+		c.doReQ(c.mainQ[indexID])
+		c.mainQ = append(c.mainQ[:indexID], c.mainQ[indexID+1:]...)
+		return nil
 
-		return errors.Wrap(ubroker.ErrInvalidID, "invalid Id")
 	}
-	c.DoingReQueue(ctx, id)
 	return nil
 }
-func (c *core) DoingPublish(ctx context.Context, message ubroker.Message) {
-	c.lastIdValue += 1
-	c.receivedId = append(c.receivedId, c.lastIdValue)
-	v := ubroker.Delivery{Message: message, ID: c.lastIdValue}
-	v2 := item{Message: message, ID: c.lastIdValue, receivedAckChannel: make(chan int, 10)}
-	c.publishedQueue = append(c.publishedQueue, v2)
-	c.brokerChan <- v
-	c.mut.Unlock()
 
-	c.HandelingTTL(ctx, v2)
+func (c *core) doReQ(msg1 messageType) error {
+	//c.wg.Add(1)
 	//defer c.wg.Done()
+	c.lastID = c.lastID + 1
+	var newMsg ubroker.Delivery
+	newMsg.Message = msg1.msg.Message
+	newMsg.ID = c.lastID
+	var newnewmsg = messageType{}
+	newnewmsg.msg = newMsg
+	newnewmsg.ttlTime = time.Now()
+
+	c.mainQ = append(c.mainQ, newnewmsg)
+	//send message to channel
+	c.delChan <- newMsg
+	return nil
 }
+
 func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	if contextProblem(ctx) {
+	//c.wg.Add(1)
+	//defer c.wg.Done()
+
+	switch ctx.Err() {
+
+	case context.Canceled:
+		return ctx.Err()
+	case context.DeadlineExceeded:
 		return ctx.Err()
 	}
-	c.mut.Lock()
-	if c.closed {
-		c.mut.Unlock()
+	c.Lock()
+	defer c.Unlock()
+
+	if c.isClosed == true {
 		return ubroker.ErrClosed
 	}
-	go c.DoingPublish(ctx, message)
+
+	c.lastID = c.lastID + 1
+	var newMsg ubroker.Delivery
+	newMsg.Message = message
+	newMsg.ID = c.lastID
+	//send message to channel
+	c.delChan <- newMsg
+
+	var newnewmsg = messageType{}
+	newnewmsg.msg = newMsg
+	newnewmsg.ttlTime = time.Now()
+	c.mainQ = append(c.mainQ, newnewmsg)
 	return nil
 }
 
 func (c *core) Close() error {
-	if c.closed {
+	//c.wg.Wait()
+	if c.isClosed {
 		return nil
 	}
-	//c.wg.Wait()
-	for i := 0; i < 4000; i++ {
-		c.closedChan <- true
-	}
-	c.mut.Lock()
-	close(c.brokerChan)
-	c.closed = true
-	c.mut.Unlock()
+	c.Lock()
+	defer c.Unlock()
+	c.isClosed = true
+	close(c.delChan)
+
 	return nil
 }
