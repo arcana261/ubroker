@@ -5,225 +5,338 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mahtabfarrokh/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
+
+	"github.com/arcana261/ubroker/pkg/ubroker"
 )
 
 // New creates a new instance of ubroker.Broker
 // with given `ttl`. `ttl` determines time in which
 // we requeue an unacknowledged/unrequeued message
 // automatically.
-
 func New(ttl time.Duration) ubroker.Broker {
-
-	c := &core{
-		delFlag:        false,
-		isClosed:       false,
-		delChan:        make(chan ubroker.Delivery, 100),
-		mainQ:          make([]messageType, 0),
-		lastID:         0,
-		ackedMessageID: make([]int, 0),
-		ttl:            ttl,
+	broker := &core{
+		ttl:             ttl,
+		requests:        make(chan interface{}),
+		deliveryChannel: make(chan *ubroker.Delivery),
+		closed:          make(chan bool, 1),
+		closing:         make(chan bool, 1),
+		pending:         make(map[int32]*ubroker.Message),
+		messages:        []*ubroker.Delivery{{}},
 	}
-	return c
+
+	broker.wg.Add(1)
+	go broker.startDelivery()
+
+	return broker
 }
 
 type core struct {
-	sync.Mutex
-	isClosed       bool
-	delChan        chan ubroker.Delivery
-	lastID         int
-	mainQ          []messageType
-	ttl            time.Duration
-	delFlag        bool
-	ackedMessageID []int
+	nextID int32
+	ttl    time.Duration
+
+	mutex   sync.Mutex
+	working sync.WaitGroup
+	wg      sync.WaitGroup
+
+	requests        chan interface{}
+	deliveryChannel chan *ubroker.Delivery
+	closed          chan bool
+	closing         chan bool
+	pending         map[int32]*ubroker.Message
+	messages        []*ubroker.Delivery
+	channel         chan *ubroker.Delivery
 }
 
-type messageType struct {
-	msg     ubroker.Delivery
-	ttlTime time.Time
+type acknowledgeRequest struct {
+	id       int32
+	response chan acknowledgeResponse
 }
 
-func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
+type acknowledgeResponse struct {
+	id  int32
+	err error
+}
 
-	switch ctx.Err() {
-	case context.Canceled:
-		return nil, ctx.Err()
-	case context.DeadlineExceeded:
+type requeueRequest struct {
+	id       int32
+	response chan requeueResponse
+}
+
+type requeueResponse struct {
+	id  int32
+	err error
+}
+
+type publishRequest struct {
+	message  *ubroker.Message
+	response chan publishResponse
+}
+
+type publishResponse struct {
+	err error
+}
+
+func (c *core) Delivery(ctx context.Context) (<-chan *ubroker.Delivery, error) {
+	if isCanceledContext(ctx) {
 		return nil, ctx.Err()
 	}
-	c.Lock()
-	defer c.Unlock()
-	if c.isClosed == true {
+
+	if !c.startWorking() {
 		return nil, ubroker.ErrClosed
 	}
-	c.delFlag = true
+	defer c.working.Done()
 
-	return c.delChan, nil
+	return c.deliveryChannel, nil
 }
 
-func (c *core) Acknowledge(ctx context.Context, id int) error {
-
-	switch ctx.Err() {
-	case context.Canceled:
-		return ctx.Err()
-	case context.DeadlineExceeded:
+func (c *core) Acknowledge(ctx context.Context, id int32) error {
+	if isCanceledContext(ctx) {
 		return ctx.Err()
 	}
-	c.Lock()
-	defer c.Unlock()
-	if c.isClosed == true {
+
+	if !c.startWorking() {
 		return ubroker.ErrClosed
 	}
+	defer c.working.Done()
 
-	// check delivery done
-	if c.delFlag == false {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	request := &acknowledgeRequest{
+		id:       id,
+		response: make(chan acknowledgeResponse, 1),
 	}
 
-	// published
-	var indexID = -1
-	for index, message := range c.mainQ {
-		if message.msg.ID == id {
-			indexID = index
-			break
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.requests <- request:
+		select {
+		case response := <-request.response:
+			return response.err
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
+}
 
-	// acked befor
-	var ackIndex = -1
-	for index, ids := range c.ackedMessageID {
-		if ids == id {
-			ackIndex = index
-			break
+func (c *core) ReQueue(ctx context.Context, id int32) error {
+	if isCanceledContext(ctx) {
+		return ctx.Err()
+	}
+
+	if !c.startWorking() {
+		return ubroker.ErrClosed
+	}
+	defer c.working.Done()
+
+	request := &requeueRequest{
+		id:       id,
+		response: make(chan requeueResponse, 1),
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.requests <- request:
+		select {
+		case response := <-request.response:
+			return response.err
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
+}
 
-	if indexID == -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+func (c *core) Publish(ctx context.Context, message *ubroker.Message) error {
+	if isCanceledContext(ctx) {
+		return ctx.Err()
 	}
 
-	if ackIndex != -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
+	if !c.startWorking() {
+		return ubroker.ErrClosed
 	}
-	// checked ttl time
-	if time.Now().Sub(c.mainQ[indexID].ttlTime) > c.ttl {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
-	} else {
-		// acked
-		c.ackedMessageID = append(c.ackedMessageID, id)
+	defer c.working.Done()
+
+	request := &publishRequest{
+		message:  message,
+		response: make(chan publishResponse, 1),
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.closed:
+		return ubroker.ErrClosed
+	case c.requests <- request:
 		return nil
 	}
-
-	return nil
-}
-
-func (c *core) ReQueue(ctx context.Context, id int) error {
-
-	//c.wg.Done()
-	//defer c.wg.Done()
-
-	switch ctx.Err() {
-	case context.Canceled:
-		return ctx.Err()
-	case context.DeadlineExceeded:
-		return ctx.Err()
-	}
-	c.Lock()
-	defer c.Unlock()
-	if c.isClosed == true {
-		return ubroker.ErrClosed
-	}
-
-	//check delivery
-	if c.delFlag == false {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
-	}
-
-	// published?
-	var indexID = -1
-	for index, message := range c.mainQ {
-		if message.msg.ID == id {
-			indexID = index
-			break
-		}
-	}
-
-	if indexID == -1 {
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
-	}
-	// check ttl time
-	if time.Now().Sub(c.mainQ[indexID].ttlTime) > c.ttl {
-		c.doReQ(c.mainQ[indexID])
-		c.mainQ = append(c.mainQ[:indexID], c.mainQ[indexID+1:]...)
-		return errors.Wrap(ubroker.ErrInvalidID, "id is invalid")
-	} else {
-		c.doReQ(c.mainQ[indexID])
-		c.mainQ = append(c.mainQ[:indexID], c.mainQ[indexID+1:]...)
-		return nil
-
-	}
-	return nil
-}
-
-func (c *core) doReQ(msg1 messageType) error {
-	//c.wg.Add(1)
-	//defer c.wg.Done()
-	c.lastID = c.lastID + 1
-	var newMsg ubroker.Delivery
-	newMsg.Message = msg1.msg.Message
-	newMsg.ID = c.lastID
-	var newnewmsg = messageType{}
-	newnewmsg.msg = newMsg
-	newnewmsg.ttlTime = time.Now()
-
-	c.mainQ = append(c.mainQ, newnewmsg)
-	//send message to channel
-	c.delChan <- newMsg
-	return nil
-}
-
-func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
-	//c.wg.Add(1)
-	//defer c.wg.Done()
-
-	switch ctx.Err() {
-
-	case context.Canceled:
-		return ctx.Err()
-	case context.DeadlineExceeded:
-		return ctx.Err()
-	}
-	c.Lock()
-	defer c.Unlock()
-
-	if c.isClosed == true {
-		return ubroker.ErrClosed
-	}
-
-	c.lastID = c.lastID + 1
-	var newMsg ubroker.Delivery
-	newMsg.Message = message
-	newMsg.ID = c.lastID
-	//send message to channel
-	c.delChan <- newMsg
-
-	var newnewmsg = messageType{}
-	newnewmsg.msg = newMsg
-	newnewmsg.ttlTime = time.Now()
-	c.mainQ = append(c.mainQ, newnewmsg)
-	return nil
 }
 
 func (c *core) Close() error {
-	//c.wg.Wait()
-	if c.isClosed {
-		return nil
+	if !c.startClosing() {
+		return errors.New("can not close channel, closing in progress")
 	}
-	c.Lock()
-	defer c.Unlock()
-	c.isClosed = true
-	close(c.delChan)
+	c.working.Wait()
+	close(c.closed)
+	c.wg.Wait()
+	close(c.deliveryChannel)
 
 	return nil
+}
+
+func (c *core) startDelivery() {
+	defer c.wg.Done()
+	for {
+		select {
+		case <-c.closed:
+			return
+
+		case request := <-c.requests:
+			if isAcknowledgeRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*acknowledgeRequest)
+				req.response <- c.handleAcknowledge(req)
+			} else if isRequeueRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*requeueRequest)
+				req.response <- c.handleRequeue(req)
+			} else if isPublishRequest(request) {
+				c.wg.Add(1)
+				req, _ := request.(*publishRequest)
+				req.response <- c.handlePublish(req)
+			} else {
+				panic(errors.New("UNKNOWN REQUEST"))
+			}
+
+		case c.channel <- c.messages[0]:
+			if c.channel != nil {
+				c.pending[c.messages[0].Id] = c.messages[0].Message
+				c.wg.Add(1)
+				go c.snooze(c.messages[0].Id)
+
+				c.messages = c.messages[1:]
+				if len(c.messages) == 0 {
+					c.channel = nil
+					c.messages = []*ubroker.Delivery{{}}
+				}
+			}
+		}
+	}
+}
+
+func (c *core) startWorking() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	select {
+	case <-c.closing:
+		return false
+	default:
+		c.working.Add(1)
+		return true
+	}
+}
+
+func (c *core) startClosing() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	select {
+	case <-c.closing:
+		return false
+	default:
+		close(c.closing)
+		return true
+	}
+}
+
+func isCanceledContext(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+func isAcknowledgeRequest(request interface{}) bool {
+	_, ok := request.(*acknowledgeRequest)
+	return ok
+}
+
+func isRequeueRequest(request interface{}) bool {
+	_, ok := request.(*requeueRequest)
+	return ok
+}
+
+func isPublishRequest(request interface{}) bool {
+	_, ok := request.(*publishRequest)
+	return ok
+}
+
+func (c *core) handleAcknowledge(request *acknowledgeRequest) acknowledgeResponse {
+	defer c.wg.Done()
+	_, ok := c.pending[request.id]
+	if !ok {
+		return acknowledgeResponse{id: request.id, err: ubroker.ErrInvalidID}
+	}
+	delete(c.pending, request.id)
+	return acknowledgeResponse{id: request.id, err: nil}
+}
+
+func (c *core) handleRequeue(request *requeueRequest) requeueResponse {
+	defer c.wg.Done()
+	message, ok := c.pending[request.id]
+	if !ok {
+		return requeueResponse{id: request.id, err: ubroker.ErrInvalidID}
+	}
+	delete(c.pending, request.id)
+	c.wg.Add(1)
+	c.handlePublish(&publishRequest{
+		message:  message,
+		response: make(chan publishResponse, 1),
+	})
+	return requeueResponse{id: request.id, err: nil}
+}
+
+func (c *core) handlePublish(request *publishRequest) publishResponse {
+	defer c.wg.Done()
+
+	if c.channel == nil {
+		c.messages = []*ubroker.Delivery{}
+		c.channel = c.deliveryChannel
+	}
+
+	id := c.nextID
+	c.nextID++
+	newDelivery := ubroker.Delivery{
+		Id:      id,
+		Message: request.message,
+	}
+
+	c.messages = append(c.messages, &newDelivery)
+
+	return publishResponse{err: nil}
+}
+
+func (c *core) snooze(id int32) {
+	defer c.wg.Done()
+	ticker := time.NewTicker(c.ttl)
+	defer ticker.Stop()
+
+	select {
+	case <-c.closed:
+		return
+
+	case <-ticker.C:
+		request := &requeueRequest{
+			id:       id,
+			response: make(chan requeueResponse, 1),
+		}
+		select {
+		case <-c.closed:
+			return
+
+		case c.requests <- request:
+		}
+	}
 }

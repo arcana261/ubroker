@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mahtabfarrokh/ubroker/internal/broker"
-	"github.com/mahtabfarrokh/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/internal/broker"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"
@@ -30,9 +30,11 @@ func TestCoreBrokerTestSuite(t *testing.T) {
 func BenchmarkPublish(b *testing.B) {
 	broker := broker.New(1 * time.Minute)
 	s := assert.New(b)
+
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+		s.Nil(broker.Publish(context.Background(), &ubroker.Message{}))
 	}
 }
 
@@ -41,7 +43,7 @@ func BenchmarkDelivery(b *testing.B) {
 	s := assert.New(b)
 
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+		s.Nil(broker.Publish(context.Background(), &ubroker.Message{}))
 	}
 
 	delivery, err := broker.Delivery(context.Background())
@@ -59,12 +61,12 @@ func BenchmarkAcknowledge(b *testing.B) {
 	s := assert.New(b)
 
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+		s.Nil(broker.Publish(context.Background(), &ubroker.Message{}))
 	}
 
 	delivery, err := broker.Delivery(context.Background())
 	s.Nil(err)
-	deliveries := make([]ubroker.Delivery, 0, b.N)
+	deliveries := make([]*ubroker.Delivery, 0, b.N)
 
 	for i := 0; i < b.N; i++ {
 		deliveries = append(deliveries, <-delivery)
@@ -73,7 +75,7 @@ func BenchmarkAcknowledge(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.Acknowledge(context.Background(), deliveries[i].ID))
+		s.Nil(broker.Acknowledge(context.Background(), deliveries[i].Id))
 	}
 }
 
@@ -82,12 +84,12 @@ func BenchmarkReQueue(b *testing.B) {
 	s := assert.New(b)
 
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.Publish(context.Background(), ubroker.Message{}))
+		s.Nil(broker.Publish(context.Background(), &ubroker.Message{}))
 	}
 
 	delivery, err := broker.Delivery(context.Background())
 	s.Nil(err)
-	deliveries := make([]ubroker.Delivery, 0, b.N)
+	deliveries := make([]*ubroker.Delivery, 0, b.N)
 
 	for i := 0; i < b.N; i++ {
 		deliveries = append(deliveries, <-delivery)
@@ -96,7 +98,7 @@ func BenchmarkReQueue(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.Nil(broker.ReQueue(context.Background(), deliveries[i].ID))
+		s.Nil(broker.ReQueue(context.Background(), deliveries[i].Id))
 	}
 }
 
@@ -121,7 +123,7 @@ func (s *CoreBrokerTestSuite) TestPublishedMessageShouldAppearInDeliveryOnce() {
 	s.publish("hello1")
 	delivery := s.getDelivery(context.Background())
 	msg := <-delivery
-	s.Equal("hello1", msg.Message.Body)
+	s.Equal("hello1", string(msg.Message.Body))
 	s.assertEmpty(delivery)
 }
 
@@ -131,13 +133,13 @@ func (s *CoreBrokerTestSuite) TestPublishShouldPreserveOrder() {
 	s.publish("hello2")
 	s.publish("hello3")
 	delivery := s.getDelivery(context.Background())
-	messages := []ubroker.Delivery{<-delivery, <-delivery, <-delivery}
-	s.NotEqual(messages[0].ID, messages[1].ID)
-	s.NotEqual(messages[0].ID, messages[2].ID)
-	s.NotEqual(messages[1].ID, messages[2].ID)
-	s.Equal("hello1", messages[0].Message.Body)
-	s.Equal("hello2", messages[1].Message.Body)
-	s.Equal("hello3", messages[2].Message.Body)
+	messages := []*ubroker.Delivery{<-delivery, <-delivery, <-delivery}
+	s.NotEqual(messages[0].Id, messages[1].Id)
+	s.NotEqual(messages[0].Id, messages[2].Id)
+	s.NotEqual(messages[1].Id, messages[2].Id)
+	s.Equal("hello1", string(messages[0].Message.Body))
+	s.Equal("hello2", string(messages[1].Message.Body))
+	s.Equal("hello3", string(messages[2].Message.Body))
 }
 
 func (s *CoreBrokerTestSuite) TestDeliveriesShouldBeUnique() {
@@ -151,7 +153,8 @@ func (s *CoreBrokerTestSuite) TestMessageShouldNotBeAcknowledgeablePreemptively(
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	for id := -100; id <= 100; id++ {
-		s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), id))
+		s.assertErrorEquals(ubroker.ErrInvalidID,
+			s.broker.Acknowledge(context.Background(), int32(id)))
 	}
 }
 
@@ -159,8 +162,8 @@ func (s *CoreBrokerTestSuite) TestMessageShouldNotBeQueueablePreemptively() {
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	for id := -100; id <= 100; id++ {
-
-		s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), id))
+		s.assertErrorEquals(ubroker.ErrInvalidID,
+			s.broker.ReQueue(context.Background(), int32(id)))
 	}
 }
 
@@ -168,15 +171,15 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldBeAcknowledgeable() {
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	msg := <-s.getDelivery(context.Background())
-	s.Nil(s.broker.Acknowledge(context.Background(), msg.ID))
+	s.Nil(s.broker.Acknowledge(context.Background(), msg.Id))
 }
 
 func (s *CoreBrokerTestSuite) TestDeliveryShouldNotBeAcknowledgedTwice() {
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	msg := <-s.getDelivery(context.Background())
-	s.Nil(s.broker.Acknowledge(context.Background(), msg.ID))
-	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg.ID))
+	s.Nil(s.broker.Acknowledge(context.Background(), msg.Id))
+	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg.Id))
 }
 
 func (s *CoreBrokerTestSuite) TestMultipleDeliveriesShouldBeAcknowledgeableIndependently() {
@@ -185,21 +188,18 @@ func (s *CoreBrokerTestSuite) TestMultipleDeliveriesShouldBeAcknowledgeableIndep
 	s.publish("hello2")
 	s.publish("hello3")
 	delivery := s.getDelivery(context.Background())
-	messages := []ubroker.Delivery{<-delivery, <-delivery, <-delivery}
-	s.Nil(s.broker.Acknowledge(context.Background(), messages[0].ID))
-	s.Nil(s.broker.Acknowledge(context.Background(), messages[1].ID))
-	s.Nil(s.broker.Acknowledge(context.Background(), messages[2].ID))
+	messages := []*ubroker.Delivery{<-delivery, <-delivery, <-delivery}
+	s.Nil(s.broker.Acknowledge(context.Background(), messages[0].Id))
+	s.Nil(s.broker.Acknowledge(context.Background(), messages[1].Id))
+	s.Nil(s.broker.Acknowledge(context.Background(), messages[2].Id))
 }
 
 func (s *CoreBrokerTestSuite) TestAcknowledgedMessageShouldNotAppearInDelivery() {
-
 	s.prepareTest(1 * time.Second)
 	s.publish("hello")
 	delivery := s.getDelivery(context.Background())
-
 	msg := <-delivery
-	s.Nil(s.broker.Acknowledge(context.Background(), msg.ID))
-
+	s.Nil(s.broker.Acknowledge(context.Background(), msg.Id))
 	s.assertEmpty(delivery)
 }
 
@@ -208,21 +208,18 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldBeReQueueable() {
 	s.publish("hello")
 	delivery := s.getDelivery(context.Background())
 	msg1 := <-delivery
-	s.Nil(s.broker.ReQueue(context.Background(), msg1.ID))
+	s.Nil(s.broker.ReQueue(context.Background(), msg1.Id))
 	msg2 := <-delivery
-	s.NotEqual(msg1.ID, msg2.ID)
+	s.NotEqual(msg1.Id, msg2.Id)
 	s.Equal(msg1.Message.Body, msg2.Message.Body)
 }
 
 func (s *CoreBrokerTestSuite) TestDeliveryShouldNotBeReQueueableTwice() {
 	s.prepareTest(1 * time.Second)
-
 	s.publish("hello")
-
 	msg := <-s.getDelivery(context.Background())
-
-	s.Nil(s.broker.ReQueue(context.Background(), msg.ID))
-	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg.ID))
+	s.Nil(s.broker.ReQueue(context.Background(), msg.Id))
+	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg.Id))
 }
 
 func (s *CoreBrokerTestSuite) TestMultipleDeliveriesShouldBeReQueueableIndependently() {
@@ -231,10 +228,10 @@ func (s *CoreBrokerTestSuite) TestMultipleDeliveriesShouldBeReQueueableIndepende
 	s.publish("hello2")
 	s.publish("hello3")
 	delivery := s.getDelivery(context.Background())
-	messages := []ubroker.Delivery{<-delivery, <-delivery, <-delivery}
-	s.Nil(s.broker.ReQueue(context.Background(), messages[0].ID))
-	s.Nil(s.broker.ReQueue(context.Background(), messages[1].ID))
-	s.Nil(s.broker.ReQueue(context.Background(), messages[2].ID))
+	messages := []*ubroker.Delivery{<-delivery, <-delivery, <-delivery}
+	s.Nil(s.broker.ReQueue(context.Background(), messages[0].Id))
+	s.Nil(s.broker.ReQueue(context.Background(), messages[1].Id))
+	s.Nil(s.broker.ReQueue(context.Background(), messages[2].Id))
 	s.Equal(messages[0].Message.Body, (<-delivery).Message.Body)
 	s.Equal(messages[1].Message.Body, (<-delivery).Message.Body)
 	s.Equal(messages[2].Message.Body, (<-delivery).Message.Body)
@@ -246,10 +243,10 @@ func (s *CoreBrokerTestSuite) TestReQueueCouldBreakOrder() {
 	s.publish("hello2")
 	s.publish("hello3")
 	delivery := s.getDelivery(context.Background())
-	messages := []ubroker.Delivery{<-delivery, <-delivery, <-delivery}
-	s.Nil(s.broker.ReQueue(context.Background(), messages[2].ID))
-	s.Nil(s.broker.ReQueue(context.Background(), messages[1].ID))
-	s.Nil(s.broker.ReQueue(context.Background(), messages[0].ID))
+	messages := []*ubroker.Delivery{<-delivery, <-delivery, <-delivery}
+	s.Nil(s.broker.ReQueue(context.Background(), messages[2].Id))
+	s.Nil(s.broker.ReQueue(context.Background(), messages[1].Id))
+	s.Nil(s.broker.ReQueue(context.Background(), messages[0].Id))
 	s.Equal(messages[2].Message.Body, (<-delivery).Message.Body)
 	s.Equal(messages[1].Message.Body, (<-delivery).Message.Body)
 	s.Equal(messages[0].Message.Body, (<-delivery).Message.Body)
@@ -261,32 +258,35 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldReQueueUponHalfSecondTTL() {
 	delivery := s.getDelivery(context.Background())
 	msg1 := <-delivery
 	time.Sleep(250 * time.Millisecond)
-	s.Nil(s.broker.Acknowledge(context.Background(), msg1.ID))
+	s.Nil(s.broker.Acknowledge(context.Background(), msg1.Id))
 	s.publish("hello2")
 	msg2 := <-delivery
 	time.Sleep(750 * time.Millisecond)
-	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg2.ID))
-	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg2.ID))
+	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.Acknowledge(context.Background(), msg2.Id))
+	s.assertErrorEquals(ubroker.ErrInvalidID, s.broker.ReQueue(context.Background(), msg2.Id))
 	msg3 := <-delivery
-	s.NotEqual(msg1.ID, msg3.ID)
-	s.NotEqual(msg2.ID, msg3.ID)
-	s.Equal("hello2", msg3.Message.Body)
-	s.Nil(s.broker.Acknowledge(context.Background(), msg3.ID))
+	s.NotEqual(msg1.Id, msg3.Id)
+	s.NotEqual(msg2.Id, msg3.Id)
+	s.Equal("hello2", string(msg3.Message.Body))
+	s.Nil(s.broker.Acknowledge(context.Background(), msg3.Id))
 }
 
 func (s *CoreBrokerTestSuite) TestPublishShouldFailOnClosedBroker() {
 	s.prepareClosed()
-	s.assertErrorEquals(ubroker.ErrClosed, s.broker.Publish(context.Background(), ubroker.Message{}))
+	s.assertErrorEquals(ubroker.ErrClosed,
+		s.broker.Publish(context.Background(), &ubroker.Message{}))
 }
 
 func (s *CoreBrokerTestSuite) TestAcknowledgeShouldFailOnClosedBroker() {
 	s.prepareClosed()
-	s.assertErrorEquals(ubroker.ErrClosed, s.broker.Acknowledge(context.Background(), 1))
+	s.assertErrorEquals(ubroker.ErrClosed,
+		s.broker.Acknowledge(context.Background(), 1))
 }
 
 func (s *CoreBrokerTestSuite) TestReQueueShouldFailOnClosedBroker() {
 	s.prepareClosed()
-	s.assertErrorEquals(ubroker.ErrClosed, s.broker.ReQueue(context.Background(), 1))
+	s.assertErrorEquals(ubroker.ErrClosed,
+		s.broker.ReQueue(context.Background(), 1))
 }
 
 func (s *CoreBrokerTestSuite) TestDeliveryShouldFailOnClosedBroker() {
@@ -297,14 +297,9 @@ func (s *CoreBrokerTestSuite) TestDeliveryShouldFailOnClosedBroker() {
 
 func (s *CoreBrokerTestSuite) TestCloseShouldCloseDeliveryChannel() {
 	s.prepareTest(1 * time.Second)
-	fmt.Println(context.Background())
 	delivery := s.getDelivery(context.Background())
-	fmt.Println(delivery)
 	s.Nil(s.broker.Close())
 	_, ok := <-delivery
-	fmt.Println(s)
-
-	fmt.Println(ok)
 	s.False(ok)
 }
 
@@ -334,7 +329,8 @@ func (s *CoreBrokerTestSuite) TestPublishShouldFailOnCanceledContext() {
 	s.prepareTest(1 * time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	s.assertErrorEquals(ctx.Err(), s.broker.Publish(ctx, ubroker.Message{}))
+	s.assertErrorEquals(ctx.Err(),
+		s.broker.Publish(ctx, &ubroker.Message{}))
 }
 
 func (s *CoreBrokerTestSuite) TestDataRace() {
@@ -354,8 +350,8 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 				return
 
 			default:
-				err := s.broker.Publish(context.Background(), ubroker.Message{
-					Body: fmt.Sprint(rand.Intn(1000)),
+				err := s.broker.Publish(context.Background(), &ubroker.Message{
+					Body: []byte(fmt.Sprint(rand.Intn(1000))),
 				})
 				if err == ubroker.ErrClosed {
 					return
@@ -384,8 +380,12 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 			case <-ticker.C:
 				return
 
-			case msg := <-delivery:
-				err = s.broker.Acknowledge(context.Background(), msg.ID)
+			case msg, ok := <-delivery:
+				if !ok {
+					return
+				}
+
+				err = s.broker.Acknowledge(context.Background(), msg.Id)
 				if err == ubroker.ErrClosed {
 					return
 				}
@@ -412,8 +412,12 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 			case <-ticker.C:
 				return
 
-			case msg := <-delivery:
-				err = s.broker.ReQueue(context.Background(), msg.ID)
+			case msg, ok := <-delivery:
+				if !ok {
+					return
+				}
+
+				err = s.broker.ReQueue(context.Background(), msg.Id)
 				if err == ubroker.ErrClosed {
 					return
 				}
@@ -437,8 +441,8 @@ func (s *CoreBrokerTestSuite) TestDataRace() {
 }
 
 func (s *CoreBrokerTestSuite) publish(body string) {
-	s.Nil(s.broker.Publish(context.Background(), ubroker.Message{
-		Body: body,
+	s.Nil(s.broker.Publish(context.Background(), &ubroker.Message{
+		Body: []byte(body),
 	}))
 }
 
@@ -450,7 +454,7 @@ func (s *CoreBrokerTestSuite) assertErrorEquals(expected error, actual error) {
 	}
 }
 
-func (s *CoreBrokerTestSuite) getDelivery(ctx context.Context) <-chan ubroker.Delivery {
+func (s *CoreBrokerTestSuite) getDelivery(ctx context.Context) <-chan *ubroker.Delivery {
 	result, err := s.broker.Delivery(ctx)
 	if err != nil {
 		s.FailNow(err.Error(), "could not obtain delivery")
@@ -459,7 +463,7 @@ func (s *CoreBrokerTestSuite) getDelivery(ctx context.Context) <-chan ubroker.De
 	return result
 }
 
-func (s *CoreBrokerTestSuite) assertEmpty(delivery <-chan ubroker.Delivery) {
+func (s *CoreBrokerTestSuite) assertEmpty(delivery <-chan *ubroker.Delivery) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
