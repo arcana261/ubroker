@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maedeazad/ubroker/internal/broker"
-	"github.com/maedeazad/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/internal/broker"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/assert"

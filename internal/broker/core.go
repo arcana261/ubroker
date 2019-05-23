@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/maedeazad/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 )
 
 // New creates a new instance of ubroker.Broker
