@@ -24,7 +24,6 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	if err != nil {
 		return s.ReturnError(err)
 	}
-
 	for {
 		_, err := stream.Recv()
 		if err == io.EOF {
