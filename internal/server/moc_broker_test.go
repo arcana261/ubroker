@@ -3,7 +3,7 @@ package server_test
 import (
 	"context"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/maedeazad/ubroker/pkg/ubroker"
 	"github.com/stretchr/testify/mock"
 )
 

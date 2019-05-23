@@ -9,11 +9,11 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/maedeazad/ubroker/pkg/ubroker"
 	"google.golang.org/grpc"
 
-	"github.com/arcana261/ubroker/internal/broker"
-	"github.com/arcana261/ubroker/internal/server"
+	"github.com/maedeazad/ubroker/internal/broker"
+	"github.com/maedeazad/ubroker/internal/server"
 )
 
 func main() {
