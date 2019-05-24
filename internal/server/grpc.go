@@ -20,17 +20,20 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	//return status.Error(codes.Unimplemented, "not implemented")
 	deliveryChannel, err := s.broker.Delivery(context.Background())
-	if err != nil {
+	if err == nil {
 		return Error(err)
-	} else {
-		for {
-			if msg, ok := <-deliveryChannel; ok {
-				_ = stream.Send(msg)
-			} else {
-				return Error(err)
-			}
+	}
+	for {
+		if _, err := stream.Recv(); err != nil {
+			return Error(err)
+		}
+		if msg, ok := <-deliveryChannel; ok {
+			_ = stream.Send(msg)
+		} else {
+			return Error(err)
 		}
 	}
+
 }
 func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.AcknowledgeRequest) (*empty.Empty, error) {
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
