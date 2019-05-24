@@ -21,8 +21,9 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	//return status.Error(codes.Unimplemented, "not implemented")
 	deliveryChannel, err := s.broker.Delivery(context.Background())
 	if err != nil {
-		return Error(err)
+		return status.Error(codes.Unavailable, "service is unavailable")
 	}
+
 	for {
 		if _, err := stream.Recv(); err != nil {
 			return Error(err)
@@ -33,7 +34,6 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 			return Error(err)
 		}
 	}
-
 }
 func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.AcknowledgeRequest) (*empty.Empty, error) {
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
@@ -46,22 +46,26 @@ func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.Acknowl
 func (s *grpcServicer) ReQueue(ctx context.Context, request *ubroker.ReQueueRequest) (*empty.Empty, error) {
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
 	err := s.broker.ReQueue(ctx, request.Id)
-	if err == nil {
-		return &empty.Empty{}, status.Error(codes.OK, "ok")
+	if err != nil {
+		return &empty.Empty{}, Error(err)
+
 	}
-	return &empty.Empty{}, Error(err)
+	return &empty.Empty{}, status.Error(codes.OK, "ok")
 }
 func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*empty.Empty, error) {
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
 	err := s.broker.Publish(ctx, request)
-	if err == nil {
-		return &empty.Empty{}, status.Error(codes.OK, "ok")
+	if err != nil {
+		return &empty.Empty{}, Error(err)
 	}
-	return &empty.Empty{}, Error(err)
+	return &empty.Empty{}, status.Error(codes.OK, "ok")
 }
 func Error(err error) error {
-	if err == ubroker.ErrClosed{
+	if err.Error() == "closed" {
 		return status.Error(codes.Unavailable, "service is unavailable")
+	}
+	if err.Error() == "id is invalid" {
+		return status.Error(codes.InvalidArgument, "Argument is invalid")
 	} else {
 		return err
 	}
