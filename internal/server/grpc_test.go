@@ -84,7 +84,7 @@ func (s *GRPCServerTestSuite) TestFetchShouldReturnOneItem() {
 
 func (s *GRPCServerTestSuite) TestFetchShouldReturnTwoItems() {
 	broker := &mockBroker{}
-	broker.On("Delivery", mock.Anything).Once().Return(s.makeChannel("hello", "salam"), nil)
+	broker.On("Delivery", mock.Anything).Return(s.makeChannel("hello", "salam"), nil)
 
 	s.runTest(func(ctx context.Context, client ubroker.BrokerClient) {
 		stream, err := client.Fetch(ctx, grpc.WaitForReady(true))
@@ -144,7 +144,7 @@ func (s *GRPCServerTestSuite) TestFetchShouldNotStreamIfNotRequestedForFirstData
 
 func (s *GRPCServerTestSuite) TestFetchShouldNotStreamIfNotRequestedForMoreData() {
 	broker := &mockBroker{}
-	broker.On("Delivery", mock.Anything).Once().Return(s.makeChannel("hello", "salam"), nil)
+	broker.On("Delivery", mock.Anything).Return(s.makeChannel("hello", "salam"), nil)
 
 	s.runTest(func(ctx context.Context, client ubroker.BrokerClient) {
 		stream, err := client.Fetch(ctx, grpc.WaitForReady(true))
