@@ -20,22 +20,26 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 }
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	//return status.Error(codes.Unimplemented, "not implemented")
-	deliveryChannel, err :=s.broker.Delivery(stream.Context())
+	delivery, err := s.broker.Delivery(stream.Context())
 	if err != nil {
-		return status.Error(codes.Unavailable, "service is unavailable")
+		return ReturnError(err)
 	}
-
 	for {
-		if _, err := stream.Recv(); err == io.EOF {
+		_, err := stream.Recv()
+		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
-			return Error(err)
+			println("heeeeeeeeeeeeeeeeeeeeeer!")
+			return ReturnError(err)
 		}
-		if msg, ok := <-deliveryChannel; ok {
-			_ = stream.Send(msg)
-		} else {
-			return Error(err)
+		delivered := <-delivery
+		if delivered == nil {
+			return status.Error(codes.Unavailable, "Unavailable")
+		}
+		err = stream.Send(delivered)
+		if err != nil {
+			return ReturnError(err)
 		}
 	}
 }
@@ -43,16 +47,15 @@ func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.Acknowl
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
 	err := s.broker.Acknowledge(ctx, request.Id)
 	if err != nil {
-		return &empty.Empty{}, Error(err)
-
+		return &empty.Empty{}, ReturnError(err)
 	}
-	return &empty.Empty{}, status.Error(codes.OK, "ok")
+	return &empty.Empty{}, status.Error(codes.OK, "OK")
 }
 func (s *grpcServicer) ReQueue(ctx context.Context, request *ubroker.ReQueueRequest) (*empty.Empty, error) {
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
 	err := s.broker.ReQueue(ctx, request.Id)
 	if err != nil {
-		return &empty.Empty{}, Error(err)
+		return &empty.Empty{}, ReturnError(err)
 	}
 	return &empty.Empty{}, status.Error(codes.OK, "OK")
 }
@@ -60,16 +63,16 @@ func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*
 	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
 	err := s.broker.Publish(ctx, request)
 	if err != nil {
-		return &empty.Empty{}, Error(err)
+		return &empty.Empty{}, ReturnError(err)
 	}
 	return &empty.Empty{}, status.Error(codes.OK, "OK")
 }
-func Error(err error) error {
+func ReturnError(err error) error {
 	if err == ubroker.ErrClosed {
-		return status.Error(codes.Unavailable, "service is unavailable")
+		return status.Error(codes.Unavailable, "Unavailable")
 	}
 	if err == ubroker.ErrInvalidID {
-		return status.Error(codes.InvalidArgument, "your id is invalid")
+		return status.Error(codes.InvalidArgument, "InvalidID")
 	}
 	return nil
 }
