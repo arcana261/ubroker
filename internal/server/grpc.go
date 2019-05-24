@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/arcana261/ubroker/pkg/ubroker"
+	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
