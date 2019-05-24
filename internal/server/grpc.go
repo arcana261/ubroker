@@ -20,7 +20,7 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	//return status.Error(codes.Unimplemented, "not implemented")
 	deliveryChannel, err := s.broker.Delivery(context.Background())
-	if err == nil {
+	if err != nil {
 		return Error(err)
 	}
 	for {
@@ -60,7 +60,7 @@ func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*
 	return &empty.Empty{}, Error(err)
 }
 func Error(err error) error {
-	if err.Error() == "closed" {
+	if err == ubroker.ErrClosed{
 		return status.Error(codes.Unavailable, "service is unavailable")
 	} else {
 		return err
