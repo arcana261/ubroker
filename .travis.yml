@@ -4,7 +4,9 @@ go:
   - 1.12.x
 
 before_install:
-  - make dev-dependencies
+  - curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v3.7.1/protoc-3.7.1-linux-x86_64.zip
+  - unzip protoc-3.7.1-linux-x86_64.zip -d protoc3
+  - PROTOC=protoc3/bin/protoc PROTOC_OPTIONS="-Iprotoc3/include -I." make dev-dependencies
 
 script:
-  - make check
+  - PROTOC=protoc3/bin/protoc PROTOC_OPTIONS="-Iprotoc3/include -I." make check
