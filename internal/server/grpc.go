@@ -23,7 +23,13 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	delivery, err := s.broker.Delivery(stream.Context())
 	if err != nil {
-		return ReturnError(err)
+		if err == ubroker.ErrClosed {
+			return status.Error(codes.Unavailable, "Unavailable")
+		}
+		if err == ubroker.ErrInvalidID {
+			return status.Error(codes.InvalidArgument, "InvalidID")
+		}
+		return nil
 	}
 	for {
 		_, err := stream.Recv()
@@ -32,7 +38,13 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 		}
 		if err != nil {
 			println("heeeeeeeeeeeeeeeeeeeeeer!")
-			return ReturnError(err)
+			if err == ubroker.ErrClosed {
+				return status.Error(codes.Unavailable, "Unavailable")
+			}
+			if err == ubroker.ErrInvalidID {
+				return status.Error(codes.InvalidArgument, "InvalidID")
+			}
+			return nil
 		}
 		delivered := <-delivery
 		if delivered == nil {
@@ -40,7 +52,13 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 		}
 		err = stream.Send(delivered)
 		if err != nil {
-			return ReturnError(err)
+			if err == ubroker.ErrClosed {
+				return status.Error(codes.Unavailable, "Unavailable")
+			}
+			if err == ubroker.ErrInvalidID {
+				return status.Error(codes.InvalidArgument, "InvalidID")
+			}
+			return nil
 		}
 	}
 	//return status.Error(codes.OK, "OK")
@@ -49,7 +67,13 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.AcknowledgeRequest) (*empty.Empty, error) {
 	err := s.broker.Acknowledge(ctx, request.Id)
 	if err != nil {
-		return &empty.Empty{}, ReturnError(err)
+		if err == ubroker.ErrClosed {
+			return &empty.Empty{}, status.Error(codes.Unavailable, "Unavailable")
+		}
+		if err == ubroker.ErrInvalidID {
+			return &empty.Empty{}, status.Error(codes.InvalidArgument, "InvalidID")
+		}
+		return &empty.Empty{}, nil
 	}
 	return &empty.Empty{}, status.Error(codes.OK, "OK")
 }
@@ -57,7 +81,13 @@ func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.Acknowl
 func (s *grpcServicer) ReQueue(ctx context.Context, request *ubroker.ReQueueRequest) (*empty.Empty, error) {
 	err := s.broker.ReQueue(ctx, request.Id)
 	if err != nil {
-		return &empty.Empty{}, ReturnError(err)
+		if err == ubroker.ErrClosed {
+			return &empty.Empty{}, status.Error(codes.Unavailable, "Unavailable")
+		}
+		if err == ubroker.ErrInvalidID {
+			return &empty.Empty{}, status.Error(codes.InvalidArgument, "InvalidID")
+		}
+		return &empty.Empty{}, nil
 	}
 	return &empty.Empty{}, status.Error(codes.OK, "OK")
 }
@@ -65,16 +95,13 @@ func (s *grpcServicer) ReQueue(ctx context.Context, request *ubroker.ReQueueRequ
 func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*empty.Empty, error) {
 	err := s.broker.Publish(ctx, request)
 	if err != nil {
-		return &empty.Empty{}, ReturnError(err)
+		if err == ubroker.ErrClosed {
+			return &empty.Empty{}, status.Error(codes.Unavailable, "Unavailable")
+		}
+		if err == ubroker.ErrInvalidID {
+			return &empty.Empty{}, status.Error(codes.InvalidArgument, "InvalidID")
+		}
+		return &empty.Empty{}, nil
 	}
 	return &empty.Empty{}, status.Error(codes.OK, "OK")
-}
-func ReturnError(err error) error {
-	if err == ubroker.ErrClosed {
-		return status.Error(codes.Unavailable, "Unavailable")
-	}
-	if err == ubroker.ErrInvalidID {
-		return status.Error(codes.InvalidArgument, "InvalidID")
-	}
-	return nil
 }
