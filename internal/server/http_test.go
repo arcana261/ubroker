@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mahtabfarrokh/ubroker/internal/server"
-	"github.com/mahtabfarrokh/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/internal/server"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
