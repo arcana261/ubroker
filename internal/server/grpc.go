@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-
 	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc/codes"
@@ -18,19 +17,49 @@ func NewGRPC(broker ubroker.Broker) ubroker.BrokerServer {
 		broker: broker,
 	}
 }
-
 func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
-	return status.Error(codes.Unimplemented, "not implemented")
+	//return status.Error(codes.Unimplemented, "not implemented")
+	deliveryChannel, err := s.broker.Delivery(context.Background())
+	if err != nil {
+		return status.Error(codes.Unavailable, "service is unavailable")
+	} else {
+		for {
+			if msg, ok := <-deliveryChannel; ok {
+				_ = stream.Send(msg)
+			} else {
+				return Error(err)
+			}
+		}
+	}
 }
-
 func (s *grpcServicer) Acknowledge(ctx context.Context, request *ubroker.AcknowledgeRequest) (*empty.Empty, error) {
-	return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	err := s.broker.Acknowledge(ctx, request.Id)
+	if err == nil {
+		return &empty.Empty{}, status.Error(codes.OK, "ok")
+	}
+	return &empty.Empty{}, Error(err)
 }
-
 func (s *grpcServicer) ReQueue(ctx context.Context, request *ubroker.ReQueueRequest) (*empty.Empty, error) {
-	return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	err := s.broker.ReQueue(ctx, request.Id)
+	if err == nil {
+		return &empty.Empty{}, status.Error(codes.OK, "ok")
+	}
+	return &empty.Empty{}, Error(err)
 }
-
 func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*empty.Empty, error) {
-	return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	//return &empty.Empty{}, status.Error(codes.Unimplemented, "not implemented")
+	err := s.broker.Publish(ctx, request)
+	if err == nil {
+		return &empty.Empty{}, status.Error(codes.OK, "ok")
+	}
+	return &empty.Empty{}, Error(err)
+}
+func Error(err error) error {
+	if err.Error() == "closed" {
+		return status.Error(codes.Unavailable, "service is unavailable")
+	} else {
+		return err
+	}
 }
