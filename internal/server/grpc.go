@@ -21,7 +21,7 @@ func (s *grpcServicer) Fetch(stream ubroker.Broker_FetchServer) error {
 	//return status.Error(codes.Unimplemented, "not implemented")
 	deliveryChannel, err := s.broker.Delivery(context.Background())
 	if err != nil {
-		return status.Error(codes.Unavailable, "service is unavailable")
+		return Error(err)
 	} else {
 		for {
 			if msg, ok := <-deliveryChannel; ok {
