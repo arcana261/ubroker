@@ -3,9 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
+	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/arcana261/ubroker/pkg/ubroker"
+	"google.golang.org/grpc"
 
 	"github.com/arcana261/ubroker/internal/broker"
 	"github.com/arcana261/ubroker/internal/server"
@@ -19,13 +24,15 @@ func main() {
 
 	broker := broker.New(time.Duration(*ttlPtr) * time.Millisecond)
 	endpoint := fmt.Sprintf(":%d", *portPtr)
-	srv := server.NewHTTP(broker, endpoint)
+	servicer := server.NewGRPC(broker)
 
-	if err := srv.Run(); err != nil {
-		panic(err.Error())
+	grpcServer := grpc.NewServer()
+	ubroker.RegisterBrokerServer(grpcServer, servicer)
+
+	listener, err := net.Listen("tcp", endpoint)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
 	}
-
-	fmt.Printf("listening on %s\n", endpoint)
 
 	signalChan := make(chan os.Signal, 1)
 	cleanupDone := make(chan struct{})
@@ -35,11 +42,17 @@ func main() {
 		fmt.Printf("\nReceived an interrupt, stopping services...\n\n")
 		close(cleanupDone)
 	}()
+
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
+	}()
+
+	fmt.Printf("listening on %s\n", endpoint)
 	<-cleanupDone
 
-	if err := srv.Close(); err != nil {
-		panic(err.Error())
-	}
+	grpcServer.GracefulStop()
 
 	if err := broker.Close(); err != nil {
 		panic(err.Error())
