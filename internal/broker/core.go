@@ -2,10 +2,11 @@ package broker
 
 import (
 	"context"
-	"time"
-	"sync"
+	"fmt"
 	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/pkg/errors"
+	"sync"
+	"time"
 )
 
 // New creates a new instance of ubroker.Broker
@@ -15,19 +16,20 @@ import (
 func New(ttl time.Duration) ubroker.Broker {
 	return &core{
 		lastMessageId:	 0,
+		ttl:			 ttl,
 		deliveredOnce:   false,
 		isClosed:		 false,
 		mutex: 			 sync.Mutex{},
 		ackedMap:		 make(map[int]bool),
-		ttl:			 ttl,
-		messageQueue:	 make([]timedMessage, 0),
-		deliveryChannel: make(chan ubroker.Delivery, 100),
+		messageQueue:	 make([]timedMessage, 900),
+		deliveryChannel: make(chan ubroker.Delivery, 900),
 	}
 }
 
 type timedMessage struct {
-	buildTime 	time.Time
-	content 	ubroker.Delivery
+	acknowledge chan bool
+	buildTime 	 time.Time
+	content 	 ubroker.Delivery
 }
 
 type core struct {
@@ -41,12 +43,23 @@ type core struct {
 	deliveryChannel chan ubroker.Delivery
 }
 
-func (c *core) addMessageToQueue(message ubroker.Message) {
+func (c *core) addMessageToQueue(message ubroker.Message) error {
+
+	if c.isClosed {
+		c.mutex.Unlock()
+		return ubroker.ErrClosed
+	}
+
 	c.lastMessageId = c.lastMessageId + 1
 	var timedM = constructTimedMessage(c.lastMessageId, message)
 	c.messageQueue = append(c.messageQueue, timedM)
 	c.ackedMap[timedM.content.ID] = false
 	c.deliveryChannel <- timedM.content
+
+	c.mutex.Unlock()
+	go c.ensureMessageIsReached(timedM)
+	return nil
+
 }
 
 func (c *core) getMessageFromQueueById(id int) *timedMessage {
@@ -67,15 +80,40 @@ func (c *core) getMessageFromQueueIndexById(id int) int {
 	return -1
 }
 
-func (c *core) removeMessageFromQueue(index int) timedMessage {
+func (c *core) removeMessageFromQueue(index int) *timedMessage {
+	if index < 0 || index >= len(c.messageQueue) {
+		return nil
+	}
 	var m = c.messageQueue[index]
 	c.messageQueue[index] = c.messageQueue[len(c.messageQueue)-1]
 	c.messageQueue = c.messageQueue[:len(c.messageQueue)-1]
-	return m
+	return &m
 }
 
 func (c *core) hasCrossedTTL(m timedMessage) bool {
 	return time.Now().Sub(m.buildTime) > c.ttl
+}
+
+func (c *core) ensureMessageIsReached(message timedMessage) {
+	select {
+		case <- time.After(c.ttl):
+			c.mutex.Lock()
+			// remove from mainQ
+			var requeueIndex = c.getMessageFromQueueIndexById(message.content.ID)
+			if requeueIndex == -1 {
+				// We should never reach here
+				fmt.Print("Problem has occurred in ensuring that the message has been reached!")
+			}
+			c.removeMessageFromQueue(requeueIndex)
+			_ = c.addMessageToQueue(message.content.Message)
+		case <- message.acknowledge:
+			c.mutex.Lock()
+			if c.ackedMap[message.content.ID] {
+				c.mutex.Unlock()
+				return
+			}
+			c.mutex.Unlock()
+	}
 }
 
 func (c *core) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
@@ -117,6 +155,7 @@ func (c *core) Acknowledge(ctx context.Context, id int) error {
 	}
 
 	c.ackedMap[id] = true
+	m.acknowledge <- true
 	return nil
 
 }
@@ -127,26 +166,24 @@ func (c *core) ReQueue(ctx context.Context, id int) error {
 		return ctx.Err()
 	}
 	
-	c.mutex.Lock(); defer c.mutex.Unlock()
+	c.mutex.Lock()
 	if c.isClosed {
+		c.mutex.Unlock()
 		return ubroker.ErrClosed
 	}
 	if !c.deliveredOnce {
+		c.mutex.Unlock()
 		return errors.Wrap(ubroker.ErrInvalidID, "Message hasn't been delivered!")
 	}
 
 	var requeueIndex = c.getMessageFromQueueIndexById(id)
 	if requeueIndex == -1 {
+		c.mutex.Unlock()
 		return errors.Wrap(ubroker.ErrInvalidID, "No corresponding message to the id exists!")
 	}
 
-	var m = c.removeMessageFromQueue(requeueIndex)
-	c.addMessageToQueue(m.content.Message)
-	if c.hasCrossedTTL(m) {
-		return errors.Wrap(ubroker.ErrInvalidID, "Message with this id has invalid time!")
-	} else {
-		return nil
- 	}
+	var m = *c.removeMessageFromQueue(requeueIndex)
+	return c.addMessageToQueue(m.content.Message)
 
 }
 
@@ -154,12 +191,12 @@ func (c *core) Publish(ctx context.Context, message ubroker.Message) error {
 	if checkContext(ctx) {
 		return ctx.Err()
 	}
-	c.mutex.Lock(); defer c.mutex.Unlock()
+	c.mutex.Lock()
 	if c.isClosed {
+		c.mutex.Unlock()
 		return ubroker.ErrClosed
 	}
-	c.addMessageToQueue(message)
-	return nil
+	return c.addMessageToQueue(message)
 }
 
 func (c *core) Close() error {
@@ -181,6 +218,7 @@ func checkContext(ctx context.Context) bool {
 
 func constructTimedMessage(id int, message ubroker.Message) timedMessage {
 	return timedMessage {
+		acknowledge: make(chan bool, 100),
 		buildTime: 	 time.Now(),
 		content: 	 ubroker.Delivery {
 			Message: message,
