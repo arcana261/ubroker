@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github.com/Meshkati/ubroker/internal/server"
-	"github.com/Meshkati/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/internal/server"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/phayes/freeport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
