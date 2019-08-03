@@ -62,7 +62,7 @@ func (s *grpcServicer) Publish(ctx context.Context, request *ubroker.Message) (*
 	return &empty.Empty{}, serviceError
 }
 
-
+// Converts broker errors to service errors
 func convertError(err error) error {
 	switch err {
 	case ubroker.ErrClosed:
