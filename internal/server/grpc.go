@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/meshkati/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 )
 
 type grpcServicer struct {
