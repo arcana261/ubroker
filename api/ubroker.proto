@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package ubroker;
+option go_package = "github.com/arcana261/ubroker/pkg/ubroker";
+
+import "google/protobuf/empty.proto";
+
+service Broker {
+    // Fetch should return a single Delivery per FetchRequest.
+    // Should return:
+    //     Unavailable: If broker has been closed
+    rpc Fetch(stream FetchRequest) returns (stream Delivery);
+
+    // Acknowledge a message
+    // Should return:
+    //     OK: on success
+    //     Unavailable: If broker has been closed
+    //     InvalidArgument: If requested ID is invalid
+    rpc Acknowledge(AcknowledgeRequest) returns (google.protobuf.Empty);
+
+    // ReQueue a message
+    //     OK: on success
+    //     Unavailable: If broker has been closed
+    //     InvalidArgument: If requested ID is invalid
+    rpc ReQueue(ReQueueRequest) returns (google.protobuf.Empty);
+
+    // Publish message to Queue
+    //     OK: on success
+    //     Unavailable: If broker has been closed
+    rpc Publish(Message) returns (google.protobuf.Empty);
+}
+
+message Message {
+    bytes body = 1;
+}
+
+message Delivery {
+    Message message = 1;
+    int32 id = 2;
+}
+
+message FetchRequest {
+}
+
+message AcknowledgeRequest {
+    int32 id = 1;
+}
+
+message ReQueueRequest {
+    int32 id = 1;
+}

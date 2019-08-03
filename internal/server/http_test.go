@@ -1,7 +1,6 @@
 package server_test
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,40 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/meshkati/ubroker/internal/server"
-	"github.com/meshkati/ubroker/pkg/ubroker"
+	"github.com/arcana261/ubroker/internal/server"
+	"github.com/arcana261/ubroker/pkg/ubroker"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
-
-type mockBroker struct {
-	mock.Mock
-}
-
-func (m *mockBroker) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *mockBroker) Delivery(ctx context.Context) (<-chan ubroker.Delivery, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(<-chan ubroker.Delivery), args.Error(1)
-}
-
-func (m *mockBroker) Acknowledge(ctx context.Context, id int) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
-func (m *mockBroker) ReQueue(ctx context.Context, id int) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
-func (m *mockBroker) Publish(ctx context.Context, message ubroker.Message) error {
-	args := m.Called(ctx, message)
-	return args.Error(0)
-}
 
 type HTTPServerTestSuite struct {
 	suite.Suite
@@ -57,14 +27,14 @@ func TestHTTPServerTestSuite(t *testing.T) {
 
 func (s *HTTPServerTestSuite) prepareTest() {
 	s.broker = new(mockBroker)
-	s.broker.On("Delivery", mock.Anything).Return(make(<-chan ubroker.Delivery, 0), nil)
+	s.broker.On("Delivery", mock.Anything).Return(make(<-chan *ubroker.Delivery, 0), nil)
 	s.server = server.NewHTTP(s.broker, ":0")
 	s.server.Run()
 }
 
 func (s *HTTPServerTestSuite) TestEmptyFetch() {
 	s.broker = new(mockBroker)
-	s.broker.On("Delivery", mock.Anything).Return(make(<-chan ubroker.Delivery, 0), nil)
+	s.broker.On("Delivery", mock.Anything).Return(make(<-chan *ubroker.Delivery, 0), nil)
 	s.server = server.NewHTTP(s.broker, ":0")
 	s.server.Run()
 
@@ -73,63 +43,63 @@ func (s *HTTPServerTestSuite) TestEmptyFetch() {
 
 func (s *HTTPServerTestSuite) TestPublish() {
 	s.prepareTest()
-	s.broker.On("Publish", mock.Anything, mock.Anything).Return(nil)
-	s.httpPublish(`{"body": "hello"}`)
-	s.broker.AssertCalled(
-		s.t,
-		"Publish",
-		mock.Anything,
-		ubroker.Message{Body: "hello"},
-	)
+
+	s.broker.On("Publish", mock.Anything, mock.MatchedBy(func(msg *ubroker.Message) bool {
+		s.Equal("hello", string(msg.Body))
+		return "hello" == string(msg.Body)
+	})).Return(nil)
+
+	s.httpPublish(`{"body":"aGVsbG8="}`)
+	s.broker.AssertExpectations(s.T())
 }
 
 func (s *HTTPServerTestSuite) TestFailedReQueue() {
 	s.prepareTest()
-	s.broker.On("ReQueue", mock.Anything, 123).Return(ubroker.ErrInvalidID)
+	s.broker.On("ReQueue", mock.Anything, int32(123)).Return(ubroker.ErrInvalidID)
 	body := `{"error": "id is invalid"}`
 	s.httpReQueue(123, 400, &body)
 	s.broker.AssertCalled(
 		s.t,
 		"ReQueue",
 		mock.Anything,
-		123,
+		int32(123),
 	)
 }
 
 func (s *HTTPServerTestSuite) TestReQueue() {
 	s.prepareTest()
-	s.broker.On("ReQueue", mock.Anything, 123).Return(nil)
+	s.broker.On("ReQueue", mock.Anything, int32(123)).Return(nil)
 	s.httpReQueue(123, 200, nil)
 	s.broker.AssertCalled(
 		s.t,
 		"ReQueue",
 		mock.Anything,
-		123,
+		int32(123),
 	)
 }
 
 func (s *HTTPServerTestSuite) TestFailedAcknowledge() {
 	s.prepareTest()
-	s.broker.On("Acknowledge", mock.Anything, 123).Return(ubroker.ErrInvalidID)
+	s.broker.On("Acknowledge", mock.Anything, int32(123)).Return(ubroker.ErrInvalidID)
 	body := `{"error": "id is invalid"}`
 	s.httpAcknowledge(123, 400, &body)
 	s.broker.AssertCalled(
 		s.t,
 		"Acknowledge",
 		mock.Anything,
-		123,
+		int32(123),
 	)
 }
 
 func (s *HTTPServerTestSuite) TestAcknowledge() {
 	s.prepareTest()
-	s.broker.On("Acknowledge", mock.Anything, 123).Return(nil)
+	s.broker.On("Acknowledge", mock.Anything, int32(123)).Return(nil)
 	s.httpAcknowledge(123, 200, nil)
 	s.broker.AssertCalled(
 		s.t,
 		"Acknowledge",
 		mock.Anything,
-		123,
+		int32(123),
 	)
 }
 
